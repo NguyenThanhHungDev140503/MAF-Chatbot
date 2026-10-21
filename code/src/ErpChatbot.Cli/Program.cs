@@ -17,6 +17,7 @@ var builder = Host.CreateApplicationBuilder(args);
 
 // Cấu hình phân tầng: appsettings.json + Ghi đè bằng biến môi trường (theo chuẩn Ex3)
 builder.Configuration
+    .SetBasePath(AppContext.BaseDirectory)
     .AddJsonFile("appsettings.json", optional: false, reloadOnChange: true)
     .AddEnvironmentVariables();
 
@@ -46,11 +47,12 @@ builder.Services.AddScoped<CliCommandHandler>();
 
 using var host = builder.Build();
 
-var factory = host.Services.GetRequiredService<IChatClientFactory>();
-var llmOptions = host.Services.GetRequiredService<IOptions<LlmOptions>>().Value;
-var erpOptions = host.Services.GetRequiredService<IOptions<ErpOptions>>().Value;
-var agentService = host.Services.GetRequiredService<IErpAgentService>();
-var commandHandler = host.Services.GetRequiredService<CliCommandHandler>();
+using var scope = host.Services.CreateScope();
+var factory = scope.ServiceProvider.GetRequiredService<IChatClientFactory>();
+var llmOptions = scope.ServiceProvider.GetRequiredService<IOptions<LlmOptions>>().Value;
+var erpOptions = scope.ServiceProvider.GetRequiredService<IOptions<ErpOptions>>().Value;
+var agentService = scope.ServiceProvider.GetRequiredService<IErpAgentService>();
+var commandHandler = scope.ServiceProvider.GetRequiredService<CliCommandHandler>();
 
 // 1. In Banner ứng dụng
 Console.WriteLine("===============================================================");
@@ -126,7 +128,7 @@ while (true)
         long turnTokens = currentStats.TotalTokens - prevTotalTokens;
 
         Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine($"  [Thời gian: {stopwatch.ElapsedMilliseconds}ms | Token tích luỹ: {currentStats.TotalTokens}]");
+        Console.WriteLine($"  [Thời gian: {stopwatch.ElapsedMilliseconds}ms | Token lượt này: {turnTokens} | Token tích luỹ: {currentStats.TotalTokens}]");
         Console.ResetColor();
         Console.WriteLine();
     }

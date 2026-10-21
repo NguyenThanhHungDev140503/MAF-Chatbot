@@ -1,5 +1,6 @@
 using ErpChatbot.Core.Interfaces;
 using ErpChatbot.Core.Models;
+using Microsoft.Extensions.Options;
 
 namespace ErpChatbot.Cli;
 
@@ -16,6 +17,14 @@ public class CliCommandHandler
     private readonly IErpAgentService _agentService;
     private readonly LlmOptions _llmOptions;
     private readonly ErpOptions _erpOptions;
+
+    public CliCommandHandler(
+        IErpAgentService agentService,
+        IOptions<LlmOptions> llmOptions,
+        IOptions<ErpOptions> erpOptions)
+        : this(agentService, llmOptions.Value, erpOptions.Value)
+    {
+    }
 
     public CliCommandHandler(IErpAgentService agentService, LlmOptions llmOptions, ErpOptions erpOptions)
     {

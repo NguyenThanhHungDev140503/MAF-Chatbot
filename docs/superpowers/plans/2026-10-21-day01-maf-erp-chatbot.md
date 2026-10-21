@@ -1,6 +1,6 @@
 # Ngày 1 — Nền tảng Microsoft Agent Framework (MAF) cho Chatbot ERP (.NET 10) Implementation Plan
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [x]`) syntax for tracking.
 
 **Goal:** Xây dựng một Solution .NET 10 chuẩn mực tại `code/` hiện thực hóa trọn vẹn luồng Ngày 1 (chuyển đổi từ `IChatClient` thô sang `AIAgent` và `AgentSession` của Microsoft Agent Framework) với Clean Architecture, sẵn sàng mở rộng cho 7 giai đoạn trong lộ trình Chatbot ERP.
 
@@ -42,7 +42,7 @@
   - `IChatClientFactory`: `IChatClient CreateClient()`, `Task<(bool IsHealthy, string Message)> CheckHealthAsync(CancellationToken cancellationToken = default)`
   - DTOs: `LlmOptions`, `OllamaOptions`, `ErpOptions`, `SessionStats`, `ChatTurnResponse`
 
-- [ ] **Step 1: Khởi tạo Solution và các project bằng .NET CLI**
+- [x] **Step 1: Khởi tạo Solution và các project bằng .NET CLI**
 
 Run:
 ```bash
@@ -58,7 +58,7 @@ dotnet add tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj package FluentAssertio
 rm -f src/ErpChatbot.Core/Class1.cs tests/ErpChatbot.Tests/UnitTest1.cs
 ```
 
-- [ ] **Step 2: Viết failing test cho Core Models và Options**
+- [x] **Step 2: Viết failing test cho Core Models và Options**
 
 Tạo file `code/tests/ErpChatbot.Tests/Core/CoreModelsTests.cs`:
 ```csharp
@@ -107,12 +107,12 @@ public class CoreModelsTests
 }
 ```
 
-- [ ] **Step 3: Chạy test để xác nhận test FAIL (chưa có code triển khai)**
+- [x] **Step 3: Chạy test để xác nhận test FAIL (chưa có code triển khai)**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: Build compilation FAIL với lỗi không tìm thấy namespace/class `ErpChatbot.Core.Models`.
 
-- [ ] **Step 4: Triển khai Models và Interfaces trong `ErpChatbot.Core`**
+- [x] **Step 4: Triển khai Models và Interfaces trong `ErpChatbot.Core`**
 
 Tạo file `code/src/ErpChatbot.Core/Models/LlmOptions.cs`:
 ```csharp
@@ -223,12 +223,12 @@ public interface IErpAgentService
 }
 ```
 
-- [ ] **Step 5: Chạy test để xác nhận test PASS**
+- [x] **Step 5: Chạy test để xác nhận test PASS**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: 3 passed, 0 failed.
 
-- [ ] **Step 6: Commit Task 1**
+- [x] **Step 6: Commit Task 1**
 
 ```bash
 cd /home/nguyen-thanh-hung/Documents/MAF-Chatbot
@@ -254,7 +254,7 @@ git commit -m "feat(core): bootstrap solution and implement core models and inte
 - Produces:
   - `ChatClientFactory`: Khởi tạo `OllamaApiClient` (implement `IChatClient`). Throw `InvalidOperationException` cho provider không phải `ollama`. Thực hiện `CheckHealthAsync` với timeout 5s, gọi request thật xác nhận model tồn tại, phân biệt thông điệp lỗi.
 
-- [ ] **Step 1: Khởi tạo project `ErpChatbot.Infrastructure` và thêm dependencies**
+- [x] **Step 1: Khởi tạo project `ErpChatbot.Infrastructure` và thêm dependencies**
 
 Run:
 ```bash
@@ -269,7 +269,7 @@ dotnet add tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj reference src/ErpChatb
 rm -f src/ErpChatbot.Infrastructure/Class1.cs
 ```
 
-- [ ] **Step 2: Viết 6 test cases cho `ChatClientFactoryTests`**
+- [x] **Step 2: Viết 6 test cases cho `ChatClientFactoryTests`**
 
 Tạo file `code/tests/ErpChatbot.Tests/Infrastructure/ChatClientFactoryTests.cs`:
 ```csharp
@@ -395,12 +395,12 @@ public class ChatClientFactoryTests
 }
 ```
 
-- [ ] **Step 3: Chạy test để xác nhận test FAIL (chưa có `ChatClientFactory`)**
+- [x] **Step 3: Chạy test để xác nhận test FAIL (chưa có `ChatClientFactory`)**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: Build compilation FAIL với lỗi không tìm thấy `ChatClientFactory`.
 
-- [ ] **Step 4: Triển khai `ChatClientFactory`**
+- [x] **Step 4: Triển khai `ChatClientFactory`**
 
 Tạo file `code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs`:
 ```csharp
@@ -485,12 +485,12 @@ public class ChatClientFactory : IChatClientFactory
 }
 ```
 
-- [ ] **Step 5: Chạy test để xác nhận tất cả 9 tests PASS**
+- [x] **Step 5: Chạy test để xác nhận tất cả 9 tests PASS**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: 9 passed, 0 failed.
 
-- [ ] **Step 6: Commit Task 2**
+- [x] **Step 6: Commit Task 2**
 
 ```bash
 cd /home/nguyen-thanh-hung/Documents/MAF-Chatbot
@@ -518,7 +518,7 @@ git commit -m "feat(infrastructure): implement ChatClientFactory with Ollama and
 - Produces:
   - `ErpAgentService`: Triển khai `IErpAgentService` sử dụng `AIAgent` và `AgentSession` của `Microsoft.Agents.AI`. Quản lý streaming, bóc tách token từ `UsageContent`, phục hồi khi stream lỗi hoặc cancel mà không reset session.
 
-- [ ] **Step 1: Khởi tạo project `ErpChatbot.Agent`**
+- [x] **Step 1: Khởi tạo project `ErpChatbot.Agent`**
 
 Run:
 ```bash
@@ -533,7 +533,7 @@ dotnet add tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj reference src/ErpChatb
 rm -f src/ErpChatbot.Agent/Class1.cs
 ```
 
-- [ ] **Step 2: Viết 6 test cases cho `ErpAgentServiceTests`**
+- [x] **Step 2: Viết 6 test cases cho `ErpAgentServiceTests`**
 
 Tạo file `code/tests/ErpChatbot.Tests/Agent/ErpAgentServiceTests.cs`:
 ```csharp
@@ -732,12 +732,12 @@ public class ErpAgentServiceTests
 }
 ```
 
-- [ ] **Step 3: Chạy test để xác nhận test FAIL (chưa có `ErpAgentService`)**
+- [x] **Step 3: Chạy test để xác nhận test FAIL (chưa có `ErpAgentService`)**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: Build compilation FAIL với lỗi không tìm thấy `ErpAgentService`.
 
-- [ ] **Step 4: Triển khai `ErpAgentService` trong `ErpChatbot.Agent`**
+- [x] **Step 4: Triển khai `ErpAgentService` trong `ErpChatbot.Agent`**
 
 Tạo file `code/src/ErpChatbot.Agent/Services/ErpAgentService.cs`:
 ```csharp
@@ -840,12 +840,12 @@ public class ErpAgentService : IErpAgentService
 }
 ```
 
-- [ ] **Step 5: Chạy test để xác nhận tất cả 15 tests PASS**
+- [x] **Step 5: Chạy test để xác nhận tất cả 15 tests PASS**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: 15 passed, 0 failed.
 
-- [ ] **Step 6: Commit Task 3**
+- [x] **Step 6: Commit Task 3**
 
 ```bash
 cd /home/nguyen-thanh-hung/Documents/MAF-Chatbot
@@ -874,7 +874,7 @@ git commit -m "feat(agent): implement ErpAgentService with MAF AIAgent and Agent
 - Produces:
   - CLI binary (`ErpChatbot.Cli`): Composition root, nạp config, health check, vòng lặp nhận lệnh `/reset`, `/stats`, `/info`, `/exit`, stream kết quả và bắt lỗi gracefully.
 
-- [ ] **Step 1: Khởi tạo project `ErpChatbot.Cli`**
+- [x] **Step 1: Khởi tạo project `ErpChatbot.Cli`**
 
 Run:
 ```bash
@@ -888,7 +888,7 @@ dotnet add src/ErpChatbot.Cli/ErpChatbot.Cli.csproj package Microsoft.Extensions
 dotnet add tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj reference src/ErpChatbot.Cli/ErpChatbot.Cli.csproj
 ```
 
-- [ ] **Step 2: Viết test cho CLI input & command parser logic**
+- [x] **Step 2: Viết test cho CLI input & command parser logic**
 
 Tạo file `code/tests/ErpChatbot.Tests/Cli/CliCommandTests.cs`:
 ```csharp
@@ -988,12 +988,12 @@ public class CliCommandTests
 }
 ```
 
-- [ ] **Step 3: Chạy test để xác nhận test FAIL (chưa có `CliCommandHandler`)**
+- [x] **Step 3: Chạy test để xác nhận test FAIL (chưa có `CliCommandHandler`)**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: Build compilation FAIL với lỗi không tìm thấy `CliCommandHandler`.
 
-- [ ] **Step 4: Triển khai `CliCommandHandler`, `appsettings.json` và `Program.cs`**
+- [x] **Step 4: Triển khai `CliCommandHandler`, `appsettings.json` và `Program.cs`**
 
 Tạo file `code/src/ErpChatbot.Cli/CliRunner.cs`:
 ```csharp
@@ -1287,17 +1287,17 @@ while (true)
 }
 ```
 
-- [ ] **Step 5: Chạy toàn bộ 20 Unit Tests để đảm bảo 100% test PASS**
+- [x] **Step 5: Chạy toàn bộ 20 Unit Tests để đảm bảo 100% test PASS**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/tests/ErpChatbot.Tests/ErpChatbot.Tests.csproj`
 Expected: 20 passed, 0 failed.
 
-- [ ] **Step 6: Build Solution để kiểm tra biên dịch trọn vẹn**
+- [x] **Step 6: Build Solution để kiểm tra biên dịch trọn vẹn**
 
 Run: `dotnet build /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/ErpChatbot.sln`
 Expected: Build succeeded. 0 Warning(s), 0 Error(s).
 
-- [ ] **Step 7: Commit Task 4**
+- [x] **Step 7: Commit Task 4**
 
 ```bash
 cd /home/nguyen-thanh-hung/Documents/MAF-Chatbot
@@ -1314,7 +1314,7 @@ git commit -m "feat(cli): implement interactive console host, composition root a
 - Verification check: Run `dotnet run --project code/src/ErpChatbot.Cli` (Health check test)
 - Create: `code/README.md`
 
-- [ ] **Step 1: Viết tài liệu README.md hướng dẫn chạy và kiến trúc của `code/`**
+- [x] **Step 1: Viết tài liệu README.md hướng dẫn chạy và kiến trúc của `code/`**
 
 Tạo file `code/README.md`:
 ```markdown
@@ -1351,12 +1351,12 @@ dotnet run --project src/ErpChatbot.Cli
 - `OLLAMA_ENDPOINT`: `http://localhost:11434`
 ```
 
-- [ ] **Step 2: Chạy kiểm thử tự động toàn bộ Solution**
+- [x] **Step 2: Chạy kiểm thử tự động toàn bộ Solution**
 
 Run: `dotnet test /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/ErpChatbot.sln`
 Expected: 20 passed, 0 failed.
 
-- [ ] **Step 3: Chạy thử ứng dụng CLI để xác nhận banner và health check hoạt động đúng**
+- [x] **Step 3: Chạy thử ứng dụng CLI để xác nhận banner và health check hoạt động đúng**
 
 Run:
 ```bash
@@ -1364,7 +1364,7 @@ timeout 5s dotnet run --project /home/nguyen-thanh-hung/Documents/MAF-Chatbot/co
 ```
 Expected: Banner in ra đầy đủ, health check báo trạng thái (hoặc cảnh báo kết nối nếu Ollama chưa chạy), không bị crash exception.
 
-- [ ] **Step 4: Commit hoàn tất Task 5**
+- [x] **Step 4: Commit hoàn tất Task 5**
 
 ```bash
 cd /home/nguyen-thanh-hung/Documents/MAF-Chatbot

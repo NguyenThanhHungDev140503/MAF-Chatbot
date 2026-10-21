@@ -32,15 +32,16 @@ public class ChatClientFactoryTests
     }
 
     [Fact]
-    public void CreateClient_WithOllamaProvider_ReturnsOllamaApiClient()
+    public void CreateClient_WithOllamaProvider_ReturnsConfiguredChatClient()
     {
-        var options = Options.Create(new LlmOptions { Provider = "ollama", Model = "llama3.2" });
+        var options = Options.Create(new LlmOptions { Provider = "ollama", Model = "llama3.2", Temperature = 0.5f, MaxOutputTokens = 1000 });
         var factory = new ChatClientFactory(options);
 
         var client = factory.CreateClient();
 
         client.Should().NotBeNull();
-        client.Should().BeOfType<OllamaApiClient>();
+        client.Should().BeOfType<ConfigureOptionsChatClient>();
+        client.GetService(typeof(OllamaApiClient)).Should().NotBeNull();
     }
 
     [Fact]

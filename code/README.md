@@ -8,14 +8,24 @@ Hệ thống Chatbot Trợ lý ERP được xây dựng theo kiến trúc Clean 
 - **`src/ErpChatbot.Infrastructure`**: Triển khai `ChatClientFactory` (Ollama provider, health check với timeout 5s).
 - **`src/ErpChatbot.Agent`**: Bọc `IChatClient` thành MAF `AIAgent`, tự động quản lý ngữ cảnh qua `AgentSession`, stream phản hồi và trích xuất token qua `UsageContent`. Độc lập hoàn toàn với Infrastructure.
 - **`src/ErpChatbot.Cli`**: Console App tương tác, Composition Root, nạp cấu hình và xử lý các lệnh điều khiển (`/reset`, `/stats`, `/info`, `/exit`).
-- **`tests/ErpChatbot.Tests`**: Bộ Unit Tests toàn diện với 20 test cases, kiểm thử độc lập hoàn toàn thông qua Fake `IChatClient`.
+- **`tests/ErpChatbot.Tests`**: Bộ Unit Tests toàn diện với 21 test cases, kiểm thử độc lập hoàn toàn thông qua Fake `IChatClient`.
+
+## Phiên bản Thư viện (Pinned Dependencies)
+
+- **`Microsoft.Agents.AI`**: `1.24.0`
+- **`Microsoft.Extensions.AI`**: `10.10.0`
+- **`OllamaSharp`**: `5.5.0`
+- **`Microsoft.Extensions.Hosting`**: `10.0.0`
 
 ## Hướng dẫn chạy
 
 ### 1. Chạy Unit Tests
+Toàn bộ unit test sử dụng in-memory test doubles (fake clients), không yêu cầu dịch vụ ngoài, đạt tỷ lệ đạt 100%:
 ```bash
 dotnet test
 ```
+
+> **Lưu ý kiểm thử trực tiếp (Live Verification):** Automated tests dùng test doubles mô phỏng đầy đủ hành vi. Nếu muốn chạy kiểm thử đa lượt trực tiếp với LLM thật qua CLI, cần khởi động sẵn Ollama daemon (`ollama serve` và `ollama pull llama3.2`).
 
 ### 2. Chạy Chatbot CLI
 Yêu cầu bật sẵn Ollama:

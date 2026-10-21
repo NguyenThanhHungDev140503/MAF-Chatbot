@@ -165,6 +165,43 @@ public class ErpAgentServiceTests
         lastTurnMessages.Should().Contain(m => m.Text != null && m.Text.Contains("Nhớ chữ X"));
     }
 
+    [Fact]
+    public async Task TwoConversations_ShouldHaveIsolatedHistoryAndStats()
+    {
+        var fakeClient1 = new FakeStreamingChatClient(msgs => CreateChunksWithUsage(["Trả lời phiên 1"], inTokens: 10, outTokens: 5));
+        var fakeClient2 = new FakeStreamingChatClient(msgs => CreateChunksWithUsage(["Trả lời phiên 2"], inTokens: 20, outTokens: 8));
+
+        var erpOptions = Options.Create(new ErpOptions());
+        var service1 = new ErpAgentService(fakeClient1, erpOptions);
+        var service2 = new ErpAgentService(fakeClient2, erpOptions);
+
+        // Turn trên service1
+        await foreach (var _ in service1.RunStreamingAsync("Xin chào phiên 1")) { }
+
+        // Turn trên service2
+        await foreach (var _ in service2.RunStreamingAsync("Xin chào phiên 2")) { }
+
+        // Verify history isolation
+        fakeClient1.RecordedHistory.Should().HaveCount(1);
+        fakeClient1.RecordedHistory[0].Should().Contain(m => m.Text != null && m.Text.Contains("Xin chào phiên 1"));
+        fakeClient1.RecordedHistory[0].Should().NotContain(m => m.Text != null && m.Text.Contains("Xin chào phiên 2"));
+
+        fakeClient2.RecordedHistory.Should().HaveCount(1);
+        fakeClient2.RecordedHistory[0].Should().Contain(m => m.Text != null && m.Text.Contains("Xin chào phiên 2"));
+        fakeClient2.RecordedHistory[0].Should().NotContain(m => m.Text != null && m.Text.Contains("Xin chào phiên 1"));
+
+        // Verify stats isolation
+        var stats1 = service1.GetStats();
+        stats1.TurnCount.Should().Be(1);
+        stats1.TotalInputTokens.Should().Be(10);
+        stats1.TotalOutputTokens.Should().Be(5);
+
+        var stats2 = service2.GetStats();
+        stats2.TurnCount.Should().Be(1);
+        stats2.TotalInputTokens.Should().Be(20);
+        stats2.TotalOutputTokens.Should().Be(8);
+    }
+
     private static async IAsyncEnumerable<ChatResponseUpdate> CreateChunks(string[] chunks)
     {
         foreach (var chunk in chunks)

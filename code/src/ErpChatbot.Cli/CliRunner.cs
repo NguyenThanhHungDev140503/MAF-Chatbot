@@ -70,6 +70,7 @@ public class CliCommandHandler
         {
             Console.WriteLine($"\n--- THÔNG TIN HỆ THỐNG ---");
             Console.WriteLine($"Trợ lý:    {_erpOptions.AssistantName} ({_erpOptions.CompanyName})");
+            Console.WriteLine($"Chỉ dẫn:   {_erpOptions.Instructions}");
             Console.WriteLine($"Provider:  {_llmOptions.Provider}");
             Console.WriteLine($"Model:     {_llmOptions.Model}");
             Console.WriteLine($"Endpoint:  {_llmOptions.Ollama.Endpoint}");

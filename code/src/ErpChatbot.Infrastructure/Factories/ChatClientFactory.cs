@@ -37,7 +37,13 @@ public class ChatClientFactory : IChatClientFactory
 
         return _options.Provider.ToLowerInvariant() switch
         {
-            "ollama" => new OllamaApiClient(new Uri(_options.Ollama.Endpoint), _options.Model),
+            "ollama" => new ChatClientBuilder(new OllamaApiClient(new Uri(_options.Ollama.Endpoint), _options.Model))
+                .ConfigureOptions(opt =>
+                {
+                    opt.Temperature ??= _options.Temperature;
+                    opt.MaxOutputTokens ??= _options.MaxOutputTokens;
+                })
+                .Build(),
             _ => throw new InvalidOperationException(
                 $"LLM_PROVIDER không hợp lệ: '{_options.Provider}'. Ngày 1 chỉ hỗ trợ 'ollama'.")
         };
@@ -50,7 +56,7 @@ public class ChatClientFactory : IChatClientFactory
 
         try
         {
-            var client = CreateClient();
+            using var client = CreateClient();
             // Gửi một tin nhắn kiểm tra cực ngắn để xác thực cả Endpoint và sự tồn tại của Model
             var testMessage = new ChatMessage(ChatRole.User, "ping");
             var testOptions = new ChatOptions { MaxOutputTokens = 1 };

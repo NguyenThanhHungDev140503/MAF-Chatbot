@@ -63,11 +63,23 @@ public class CliCommandTests
     public async Task ProcessInput_WithInfoCommand_DisplaysConfiguration()
     {
         var service = new FakeAgentService();
-        var handler = new CliCommandHandler(service, new LlmOptions(), new ErpOptions());
+        var erpOptions = new ErpOptions { Instructions = "Chỉ dẫn thử nghiệm" };
+        var handler = new CliCommandHandler(service, new LlmOptions(), erpOptions);
 
-        var result = await handler.HandleInputAsync("/info", CancellationToken.None);
+        using var sw = new StringWriter();
+        var originalOut = Console.Out;
+        Console.SetOut(sw);
+        try
+        {
+            var result = await handler.HandleInputAsync("/info", CancellationToken.None);
+            result.Should().Be(CliInputResult.Handled);
+            sw.ToString().Should().Contain("Chỉ dẫn thử nghiệm");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
 
-        result.Should().Be(CliInputResult.Handled);
         service.PromptCalls.Should().Be(0);
     }
 

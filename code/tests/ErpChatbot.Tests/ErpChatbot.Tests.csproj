@@ -23,6 +23,7 @@
     <ProjectReference Include="..\..\src\ErpChatbot.Core\ErpChatbot.Core.csproj" />
     <ProjectReference Include="..\..\src\ErpChatbot.Infrastructure\ErpChatbot.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\ErpChatbot.Agent\ErpChatbot.Agent.csproj" />
+    <ProjectReference Include="..\..\src\ErpChatbot.Cli\ErpChatbot.Cli.csproj" />
   </ItemGroup>
 
 </Project>

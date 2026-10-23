@@ -8,7 +8,7 @@ Hệ thống Chatbot Trợ lý ERP được xây dựng theo kiến trúc Clean 
 - **`src/ErpChatbot.Infrastructure`**: Triển khai `ChatClientFactory` (Ollama provider, health check với timeout 5s).
 - **`src/ErpChatbot.Agent`**: Bọc `IChatClient` thành MAF `AIAgent`, tự động quản lý ngữ cảnh qua `AgentSession`, stream phản hồi và trích xuất token qua `UsageContent`. Độc lập hoàn toàn với Infrastructure.
 - **`src/ErpChatbot.Cli`**: Console App tương tác, Composition Root, nạp cấu hình và xử lý các lệnh điều khiển (`/reset`, `/stats`, `/info`, `/exit`).
-- **`tests/ErpChatbot.Tests`**: Bộ Unit Tests toàn diện với 21 test cases, kiểm thử độc lập hoàn toàn thông qua Fake `IChatClient`.
+- **`tests/ErpChatbot.Tests`**: Bộ Unit Tests toàn diện với 28 test cases, kiểm thử độc lập hoàn toàn thông qua Fake `IChatClient`.
 
 ## Phiên bản Thư viện (Pinned Dependencies)
 

@@ -101,7 +101,36 @@ Các mục này được bảo toàn từ PDF, chưa phải cam kết thực thi
 
 ## Traceability
 
-Pending roadmap generation. Mỗi requirement v0.1 sẽ được ánh xạ đúng một phase; future requirements chưa ánh xạ sang phase hoạt động.
+Ánh xạ milestone v0.1 trong roadmap draft, chờ duyệt. Future requirements chưa ánh xạ sang phase hoạt động. Pending nghĩa là chưa có bằng chứng nghiệm thu, kể cả khi code tương ứng đã tồn tại.
+
+| Requirement | Phase | Status |
+|-------------|-------|--------|
+| ARCH-01 | Phase 1 | Pending |
+| CONF-01 | Phase 1 | Pending |
+| CONF-02 | Phase 1 | Pending |
+| CONF-03 | Phase 1 | Pending |
+| HEALTH-01 | Phase 1 | Pending |
+| HEALTH-02 | Phase 1 | Pending |
+| CHAT-01 | Phase 1 | Pending |
+| CHAT-02 | Phase 1 | Pending |
+| CHAT-03 | Phase 1 | Pending |
+| CHAT-04 | Phase 1 | Pending |
+| SESS-01 | Phase 1 | Pending |
+| SESS-02 | Phase 2 | Pending |
+| STAT-01 | Phase 2 | Pending |
+| STAT-02 | Phase 2 | Pending |
+| CLI-01 | Phase 2 | Pending |
+| CLI-02 | Phase 2 | Pending |
+| CLI-03 | Phase 2 | Pending |
+| RES-01 | Phase 3 | Pending |
+| RES-02 | Phase 3 | Pending |
+| RES-03 | Phase 3 | Pending |
+| TEST-01 | Phase 3 | Pending |
+| TEST-02 | Phase 3 | Pending |
+| VERIFY-01 | Phase 3 | Pending |
+| DOC-01 | Phase 3 | Pending |
+
+**Coverage:** 24/24 yêu cầu v0.1 được ánh xạ đúng một phase; không bỏ sót hoặc trùng lặp.
 
 ---
 *Last updated: 2026-10-21 after source-based initialization; awaiting roadmap review.*

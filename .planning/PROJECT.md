@@ -21,7 +21,7 @@ Chưa có khả năng sản phẩm được xác minh trong phiên khởi tạo 
 - [ ] Milestone v0.1: `/reset`, `/stats`, `/info`, `/exit`, thống kê token và hủy stream mà không tự xóa lịch sử.
 - [ ] Milestone v0.1: test độc lập với LLM thật, hướng dẫn chạy và bằng chứng xác minh.
 
-Các khả năng của giai đoạn 2–6 được bảo toàn trong `MILESTONE-OVERVIEW.md` và phần Future Milestone Requirements của `REQUIREMENTS.md`. Chúng chưa thuộc phạm vi thực thi v0.1.
+Các khả năng của giai đoạn 2–6 được bảo toàn trong `reference/MILESTONE-OVERVIEW.md` và phần Future Milestone Requirements của `REQUIREMENTS.md`. Chúng chưa thuộc phạm vi thực thi v0.1.
 
 ### Out of Scope
 
@@ -38,14 +38,14 @@ Các khả năng của giai đoạn 2–6 được bảo toàn trong `MILESTONE-
 1. Người dùng đính chính ngày 2026-10-21: `tutorial/roadmap/Lo-trinh-MAF-cho-chatbot-ERP.pdf` là nguồn lộ trình TOÀN DỰ ÁN.
 2. `docs/superpowers/specs/2026-10-20-day01-maf-erp-chatbot-design.md` là design của milestone ĐẦU TIÊN, với review D1–D10 đã chốt.
 3. `docs/superpowers/plans/2026-10-21-day01-maf-erp-chatbot.md` là implementation plan cũ cho cùng milestone đầu tiên; chuyển các ý định sang GSD, không coi checkbox chưa tick là bằng chứng code chưa có.
-4. Workspace hiện tại là nguồn sự thật về tiến độ code. Danh mục nguồn và cách xử lý chênh lệch nằm ở `SOURCES.md`.
+4. Workspace hiện tại là nguồn sự thật về tiến độ code. Danh mục nguồn và cách xử lý chênh lệch nằm ở `reference/SOURCES.md`.
 
 ### Baseline đang có
 
 - `tutorial/ngay-01/Ex1`–`Ex4` minh họa từ `IChatClient` đến MAF; đây là ví dụ học, không phải sản phẩm hoàn tất.
 - Commit `bd1051b`: bootstrap `code/ErpChatbot.sln`, Core models/interfaces, test Core.
 - Commit `ad09bbd`: Infrastructure Ollama factory/health check và test tương ứng.
-- Tại lúc khảo sát, Agent project/test và thay đổi solution/test project là WIP chưa commit; một phiên khác có thể đang tiếp tục sửa các file này.
+- Tại lúc khảo sát đầu, Agent project/test là WIP; trong lúc khởi tạo đã xuất hiện commit `8dc0574` cho Agent service/streaming. Một phiên khác có thể tiếp tục sửa code; cần refresh khi lập plan.
 - Chưa xác minh build/test hoặc chat với Ollama trong phiên khởi tạo này. Không chạy build toàn solution trong lúc WIP đang thay đổi để tránh ghi nhận kết quả sai thời điểm.
 - Xem `codebase/ARCHITECTURE.md` và `codebase/STACK.md` cho baseline giới hạn đã khảo sát; chưa chạy full `$gsd-map-codebase`.
 
@@ -65,7 +65,6 @@ Các khả năng của giai đoạn 2–6 được bảo toàn trong `MILESTONE-
 - **Health**: request thật xác nhận model, timeout 5 giây, phân biệt mất kết nối/thiếu model/timeout.
 - **Streaming**: token lấy qua `UsageContent` trong `AgentResponseUpdate.Contents`; Ctrl+C và lỗi giữa stream không tự reset session. `/reset` giữ thống kê của phiên CLI.
 - **Versions**: phiên bản trong tài liệu và `.csproj` là baseline được pin, chưa phải khẳng định API mới nhất; xác minh qua Context7 trước khi dùng API hoặc sửa cấu hình SDK.
-- **Scope**: chỉ tạo GSD planning trong lượt khởi tạo; không hoàn thiện hoặc ghi đè code WIP của phiên khác.
 
 ## Key Decisions
 

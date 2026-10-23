@@ -56,5 +56,8 @@
   "resolve_model_ids": "omit",
   "mode": "interactive",
   "granularity": "coarse",
-  "runtime": "codex"
+  "runtime": "codex",
+  "graphify": {
+    "enabled": true
+  }
 }

@@ -52,7 +52,7 @@ graph TD
 | Dự án (.NET 10) | Loại | Trách nhiệm | Dependencies |
 |---|---|---|---|
 | **`ErpChatbot.Core`** | Class Library | - Interface: `IErpAgentService`, `IChatClientFactory`.<br/>- Models/DTOs: `SessionStats`, `ChatTurnResponse`, `LlmOptions`, `ErpOptions`.<br/>- System Persona & Business Instructions cho ERP.<br/>- Độc lập hoàn toàn, không phụ thuộc thư viện AI bên thứ 3. | Không |
-| **`ErpChatbot.Infrastructure`** | Class Library | - Triển khai `IChatClientFactory`.<br/>- **Ngày 1: chỉ hỗ trợ Ollama** (qua `OllamaSharp`). OpenAI/Azure OpenAI bị **lùi lại** (xem "NOT in scope") — thêm khi thực sự cần đổi provider, không làm trước theo YAGNI.<br/>- Health check: gọi 1 request thật cực ngắn (không chỉ check socket) để xác nhận model đã load được, timeout cứng 5s — timeout hoặc lỗi model-not-found trả message riêng, khác message "mất kết nối".<br/>- Đọc config phân tầng: `appsettings.json` + biến môi trường (`LLM_PROVIDER`, `LLM_MODEL`, `OLLAMA_ENDPOINT`). | `Microsoft.Extensions.AI`, `OllamaSharp`, `Microsoft.Extensions.Configuration.Binder` |
+| **`ErpChatbot.Infrastructure`** | Class Library | - Triển khai `IChatClientFactory`.<br/>- **Ngày 1: chỉ hỗ trợ Ollama** (qua `OllamaSharp`). OpenAI/Azure OpenAI bị **lùi lại** (xem "NOT in scope") — thêm khi thực sự cần đổi provider, không làm trước theo YAGNI.<br/>- Health check: gọi 1 request thật cực ngắn (không chỉ check socket) để xác nhận model đã load được, timeout cứng 30s — timeout hoặc lỗi model-not-found trả message riêng, khác message "mất kết nối".<br/>- Đọc config phân tầng: `appsettings.json` + biến môi trường (`LLM_PROVIDER`, `LLM_MODEL`, `OLLAMA_ENDPOINT`). | `Microsoft.Extensions.AI`, `OllamaSharp`, `Microsoft.Extensions.Configuration.Binder` |
 | **`ErpChatbot.Agent`** | Class Library | - Đóng gói Agent của Microsoft Agent Framework (`Microsoft.Agents.AI`).<br/>- Triển khai `IErpAgentService` với `AIAgent` và `AgentSession`.<br/>- **Chỉ phụ thuộc `ErpChatbot.Core`, KHÔNG phụ thuộc `ErpChatbot.Infrastructure`** — nhận `IChatClient` đã dựng sẵn qua constructor (DI), không tự gọi factory. Composition (`IChatClientFactory` → `IChatClient` → `AsAIAgent`) diễn ra ở `ErpChatbot.Cli/Program.cs` (composition root).<br/>- Quản lý streaming, theo dõi token usage.<br/>- Sẵn sàng nhận danh sách Tools (`AIFunction`) cho Ngày 2.<br/>- **Lưu ý sở hữu state:** instance này giữ `AgentSession`+`SessionStats` làm mutable field riêng, giả định **1 instance = 1 conversation**. Ngày 4 (Web API) PHẢI tạo 1 instance/scope riêng mỗi user (keyed DI hoặc scoped per-connection) — KHÔNG đăng ký `ErpAgentService` làm Singleton trong DI web, sẽ làm lộ dữ liệu giữa user. | `Microsoft.Agents.AI` (1.24.0), `Microsoft.Extensions.AI`, `ErpChatbot.Core` |
 | **`ErpChatbot.Cli`** | Console App | - Điểm khởi động ứng dụng console (`Program.cs`).<br/>- Giao diện console tương tác (nhận input, in stream real-time, thống kê token, lệnh điều khiển `/reset`, `/stats`, `/info`, `/exit`).<br/>- Cấu hình Dependency Injection qua `Microsoft.Extensions.Hosting`. | `Microsoft.Extensions.Hosting`, `ErpChatbot.Agent`, `ErpChatbot.Infrastructure`, `ErpChatbot.Core` |
 | **`ErpChatbot.Tests`** | xUnit Test | - Unit test kiểm tra luồng tạo Client, gom token, quản lý session.<br/>- Test với Fake `IChatClient` (không cần chạy LLM thật). | `xunit`, `Microsoft.Extensions.AI`, `ErpChatbot.Core`, `ErpChatbot.Agent`, `ErpChatbot.Infrastructure` |
@@ -96,7 +96,7 @@ Biến môi trường ưu tiên ghi đè:
 - Triển khai:
   - Khi `Provider == "ollama"`: Trả về `new OllamaApiClient(endpoint, model)` (tự triển khai `IChatClient`).
   - Provider khác: throw `InvalidOperationException($"LLM_PROVIDER không hợp lệ: {provider}")` (pattern giống switch của Ex3).
-  - `CheckHealthAsync`: gửi 1 request thật cực ngắn (ví dụ prompt rỗng/1 token) qua `IChatClient` để xác nhận model đã load được — KHÔNG chỉ check socket/HTTP, vì Ollama có thể "sống" nhưng thiếu model. Timeout cứng 5s qua `CancellationTokenSource`; hết giờ → `(false, "Không phản hồi sau 5s")`. Lỗi "model not found" trả message riêng, khác message "mất kết nối" (hai nguyên nhân khác nhau, user cần biết để sửa đúng chỗ: `ollama pull` vs kiểm tra endpoint).
+  - `CheckHealthAsync`: gửi 1 request thật cực ngắn (ví dụ prompt rỗng/1 token) qua `IChatClient` để xác nhận model đã load được — KHÔNG chỉ check socket/HTTP, vì Ollama có thể "sống" nhưng thiếu model. Timeout cứng 30s qua `CancellationTokenSource`; hết giờ → `(false, "Không phản hồi sau 30s")`. Lỗi "model not found" trả message riêng, khác message "mất kết nối" (hai nguyên nhân khác nhau, user cần biết để sửa đúng chỗ: `ollama pull` vs kiểm tra endpoint).
 
 ### 3.3. MAF Agent Service (`ErpChatbot.Agent`)
 
@@ -124,7 +124,7 @@ Biến môi trường ưu tiên ghi đè:
 ### 3.4. Giao diện CLI (`ErpChatbot.Cli`)
 
 - Hiển thị banner khởi động đẹp mắt kèm thông số kết nối.
-- Thực hiện health check lúc khởi động (timeout 5s — xem §3.2); nếu endpoint không khả dụng hoặc model chưa load được, in cảnh báo hướng dẫn rõ ràng, phân biệt rõ 2 nguyên nhân.
+- Thực hiện health check lúc khởi động (timeout 30s — xem §3.2); nếu endpoint không khả dụng hoặc model chưa load được, in cảnh báo hướng dẫn rõ ràng, phân biệt rõ 2 nguyên nhân.
 - Composition root: DI ở đây dựng `IChatClientFactory` → `IChatClient` → gọi `AsAIAgent()` → inject `IChatClient` vào `ErpAgentService` (xem §2.1 — Agent không tự biết Infrastructure).
 - Vòng lặp nhận diện các lệnh:
   - `/reset`: Tạo `AgentSession` mới, thông báo đã xóa ngữ cảnh hội thoại. KHÔNG xóa `SessionStats`.
@@ -142,7 +142,7 @@ Biến môi trường ưu tiên ghi đè:
 
 1. **Unit Testing (`ErpChatbot.Tests`)**:
    - Sử dụng Fake `IChatClient` để mô phỏng streaming phản hồi (kể cả throw giữa stream, để test không cần Ollama thật).
-   - `ChatClientFactoryTests`: `CreateClient()` với provider hợp lệ và không hợp lệ (throw `InvalidOperationException`); `CheckHealthAsync()` cả nhánh model sẵn sàng / model thiếu / timeout 5s.
+   - `ChatClientFactoryTests`: `CreateClient()` với provider hợp lệ và không hợp lệ (throw `InvalidOperationException`); `CheckHealthAsync()` cả nhánh model sẵn sàng / model thiếu / timeout 30s.
    - `ErpAgentServiceTests`:
      - Stream đầy đủ, `AgentSession` giữ ngữ cảnh qua nhiều turn.
      - Cộng dồn token qua `UsageContent` đúng qua nhiều turn liên tiếp (cumulative, không reset nhầm).
@@ -167,7 +167,7 @@ Thay cho "coverage diagram 17 path" trước đây (diagram đó chỉ nằm tro
 | 3 | Health check: model sẵn sàng | `CheckHealthAsync_WhenModelReady_ReturnsHealthy` | Có |
 | 4 | Health check: thiếu model (lỗi đúng dạng OllamaSharp ném ra) | `CheckHealthAsync_WhenModelMissing_ReturnsModelNotFoundMessage` | Có |
 | 5 | Health check: endpoint sai trả 404 chung → KHÔNG báo "thiếu model" | `CheckHealthAsync_WhenEndpointReturnsGeneric404_ReportsConnectionNotMissingModel` | Có |
-| 6 | Health check: timeout 5s | `CheckHealthAsync_WhenTimeoutExceeded_ReturnsTimeoutMessage` | Có |
+| 6 | Health check: timeout 30s | `CheckHealthAsync_WhenTimeoutExceeded_ReturnsTimeoutMessage` | Có |
 | 7 | Health check: mất kết nối | `CheckHealthAsync_WhenEndpointUnreachable_ReturnsConnectionErrorMessage` | Có |
 | 8 | Stream đủ, đúng thứ tự | `RunStreamingAsync_YieldsStreamUpdatesInOrder` | Có |
 | 9 | Session tạo lazy, giữ ngữ cảnh qua nhiều turn | `RunStreamingAsync_RetainsContextAcrossConsecutiveTurns` | Có |
@@ -237,7 +237,7 @@ Tổng hợp từ review này. Mỗi task bám 1 finding cụ thể ở trên.
 | D2 | Lỗi giữa stream: báo lỗi rõ, KHÔNG tự reset session | §3.3, §3.4, §4 |
 | D3 | `/reset` tạo session mới, giữ nguyên `SessionStats` | §2.1, §4 |
 | D4 | Lệnh `/xxx` không hợp lệ: in hint, không gọi LLM | §4 |
-| D5 | Health check có timeout 5s | §3.2, §3.4 |
+| D5 | Health check có timeout cứng, nới từ 5s lên 30s (model nguội cần ~8s nạp + độ trễ Cloudflare, VPS chạy CPU) | §3.2, §3.4 |
 | D6 | Agent chỉ phụ thuộc Core, không phụ thuộc Infrastructure; composition ở Cli | §2.1, §7 |
 | D7 | Health check gửi request thật để xác nhận model; "thiếu model" phải báo khác "mất kết nối" | §3.2, §3.4 |
 | D8 | Lấy token qua `UsageContent`, không theo pattern Ex3 | §3.3, §4 |
@@ -252,10 +252,10 @@ Tổng hợp từ review này. Mỗi task bám 1 finding cụ thể ở trên.
   - Surfaced by: Outside voice D6 — dependency leak phá Clean Architecture
   - Files: `ErpChatbot.Agent.csproj`, `ErpChatbot.Cli/Program.cs`
   - Verify: `dotnet build` không còn package reference OllamaSharp/OpenAI trong Agent project
-- [ ] **T2 (P1, human: ~15min / CC: ~3min)** — Infrastructure — CheckHealthAsync xác nhận model thật + timeout 5s
+- [ ] **T2 (P1, human: ~15min / CC: ~3min)** — Infrastructure — CheckHealthAsync xác nhận model thật + timeout 30s
   - Surfaced by: Failure mode D5+D7 — health check false-positive khi thiếu model, treo vô thời hạn khi Ollama "treo"
   - Files: `ErpChatbot.Infrastructure/ChatClientFactory.cs`
-  - Verify: test timeout trả `(false, "Không phản hồi sau 5s")`; test model-not-found trả message khác "mất kết nối"
+  - Verify: test timeout trả `(false, "Không phản hồi sau 30s")`; test model-not-found trả message khác "mất kết nối"
 - [ ] **T3 (P1, human: ~10min / CC: ~2min)** — Agent — Xử lý lỗi/hủy giữa stream nhất quán, không tự reset session
   - Surfaced by: Architecture D2 + Outside voice D10
   - Files: `ErpChatbot.Agent/ErpAgentService.cs`, `ErpChatbot.Cli/Program.cs`

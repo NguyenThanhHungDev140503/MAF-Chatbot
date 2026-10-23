@@ -14,7 +14,7 @@ public class ChatClientFactory : IChatClientFactory
     private readonly int _timeoutMs;
 
     public ChatClientFactory(IOptions<LlmOptions> options)
-        : this(options, null, 5000)
+        : this(options, null, 30000)
     {
     }
 
@@ -22,7 +22,7 @@ public class ChatClientFactory : IChatClientFactory
     public ChatClientFactory(
         IOptions<LlmOptions> options,
         Func<LlmOptions, IChatClient>? clientOverride = null,
-        int timeoutMs = 5000)
+        int timeoutMs = 30000)
     {
         _options = options.Value;
         _clientOverride = clientOverride;

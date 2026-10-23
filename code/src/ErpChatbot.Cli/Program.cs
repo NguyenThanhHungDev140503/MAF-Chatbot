@@ -63,7 +63,7 @@ Console.WriteLine("=============================================================
 Console.WriteLine("Gõ /info để xem trợ giúp, /reset để xoá lịch sử, /exit để thoát.\n");
 
 // 2. Health Check kiểm tra kết nối tới mô hình
-Console.Write("Đang kiểm tra kết nối LLM... ");
+Console.Write("Đang kiểm tra kết nối LLM (tối đa 30s nếu model đang nạp)... ");
 var (isHealthy, healthMessage) = await factory.CheckHealthAsync();
 CliChatLoop.PrintHealth(isHealthy, healthMessage);
 

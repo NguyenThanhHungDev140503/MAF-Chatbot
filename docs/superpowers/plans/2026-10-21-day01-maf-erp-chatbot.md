@@ -15,7 +15,7 @@
 - Ngày 1 chỉ hỗ trợ provider `ollama`; không thêm dependency `OpenAI` hay `Microsoft.Extensions.AI.OpenAI` theo nguyên tắc YAGNI.
 - `ErpChatbot.Agent` chỉ phụ thuộc `ErpChatbot.Core`, KHÔNG phụ thuộc `ErpChatbot.Infrastructure`.
 - Session ownership: `ErpAgentService` sở hữu `AgentSession` làm mutable state (1 instance = 1 conversation). Không bao giờ đăng ký Singleton.
-- Health check: Timeout cứng 5s, gọi request thật xác nhận model đã nạp, phân biệt lỗi model-not-found và mất kết nối.
+- Health check: Timeout cứng 30s, gọi request thật xác nhận model đã nạp, phân biệt lỗi model-not-found và mất kết nối.
 - Token tracking: Trích xuất qua `UsageContent` trong `AgentResponseUpdate.Contents`, không dùng pattern `ToChatResponse()` của Ex3.
 - Error resilience: Mất kết nối hoặc Ctrl+C ngắt stream không được tự động reset session.
 - Test coverage: mọi dòng trong bảng §4.1 của spec phải ở trạng thái "Có" (Task 6).
@@ -253,7 +253,7 @@ git commit -m "feat(core): bootstrap solution and implement core models and inte
   - `ErpChatbot.Core.Interfaces.IChatClientFactory`
   - `ErpChatbot.Core.Models.LlmOptions`
 - Produces:
-  - `ChatClientFactory`: Khởi tạo `OllamaApiClient` (implement `IChatClient`). Throw `InvalidOperationException` cho provider không phải `ollama`. Thực hiện `CheckHealthAsync` với timeout 5s, gọi request thật xác nhận model tồn tại, phân biệt thông điệp lỗi.
+  - `ChatClientFactory`: Khởi tạo `OllamaApiClient` (implement `IChatClient`). Throw `InvalidOperationException` cho provider không phải `ollama`. Thực hiện `CheckHealthAsync` với timeout 30s, gọi request thật xác nhận model tồn tại, phân biệt thông điệp lỗi.
 
 - [x] **Step 1: Khởi tạo project `ErpChatbot.Infrastructure` và thêm dependencies**
 
@@ -1326,7 +1326,7 @@ Hệ thống Chatbot Trợ lý ERP được xây dựng theo kiến trúc Clean 
 ## Cấu trúc Solution
 
 - **`src/ErpChatbot.Core`**: Chứa Domain Models, cấu hình (`LlmOptions`, `ErpOptions`), Interfaces (`IErpAgentService`, `IChatClientFactory`). Không phụ thuộc thư viện AI bên thứ 3.
-- **`src/ErpChatbot.Infrastructure`**: Triển khai `ChatClientFactory` (Ollama provider, health check với timeout 5s).
+- **`src/ErpChatbot.Infrastructure`**: Triển khai `ChatClientFactory` (Ollama provider, health check với timeout 30s).
 - **`src/ErpChatbot.Agent`**: Bọc `IChatClient` thành MAF `AIAgent`, tự động quản lý ngữ cảnh qua `AgentSession`, stream phản hồi và trích xuất token qua `UsageContent`. Độc lập hoàn toàn với Infrastructure.
 - **`src/ErpChatbot.Cli`**: Console App tương tác, Composition Root, nạp cấu hình và xử lý các lệnh điều khiển (`/reset`, `/stats`, `/info`, `/exit`).
 - **`tests/ErpChatbot.Tests`**: Bộ Unit Tests toàn diện với 20 test cases, kiểm thử độc lập hoàn toàn thông qua Fake `IChatClient`.
@@ -1361,7 +1361,7 @@ Expected: 20 passed, 0 failed.
 
 Run:
 ```bash
-timeout 5s dotnet run --project /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/src/ErpChatbot.Cli/ErpChatbot.Cli.csproj || true
+timeout 30s dotnet run --project /home/nguyen-thanh-hung/Documents/MAF-Chatbot/code/src/ErpChatbot.Cli/ErpChatbot.Cli.csproj || true
 ```
 Expected: Banner in ra đầy đủ, health check báo trạng thái (hoặc cảnh báo kết nối nếu Ollama chưa chạy), không bị crash exception.
 

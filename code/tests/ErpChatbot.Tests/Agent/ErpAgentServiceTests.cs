@@ -113,56 +113,57 @@ public class ErpAgentServiceTests
     public async Task RunStreamingAsync_WhenClientThrowsException_DoesNotResetSession()
     {
         bool shouldThrow = false;
-        var fakeClient = new FakeStreamingChatClient(msgs =>
-        {
-            if (shouldThrow) throw new HttpRequestException("Mạng chập chờn");
-            return CreateChunks(["Được rồi"]);
-        });
-        var erpOptions = Options.Create(new ErpOptions());
-        var service = new ErpAgentService(fakeClient, erpOptions);
+        var fakeClient = new FakeStreamingChatClient(msgs => shouldThrow ? ThrowAfterFirstChunk() : CreateChunks(["Được rồi"]));
+        var service = new ErpAgentService(fakeClient, Options.Create(new ErpOptions()));
 
-        // Turn 1 thành công
         await foreach (var _ in service.RunStreamingAsync("Ghi nhớ: mã kho là K1")) { }
 
-        // Turn 2 lỗi mạng
+        // Turn 2: đã nhận ≥1 chunk rồi mạng rớt
         shouldThrow = true;
+        var received = new List<string>();
         var act = async () =>
         {
-            await foreach (var _ in service.RunStreamingAsync("Gặp lỗi nè")) { }
+            await foreach (var chunk in service.RunStreamingAsync("Gặp lỗi nè")) received.Add(chunk);
         };
         await act.Should().ThrowAsync<HttpRequestException>();
+        received.Should().NotBeEmpty();
 
-        // Turn 3 thành công lại -> Ngữ cảnh Turn 1 vẫn còn, session không bị reset nhầm
+        // Turn 3: ngữ cảnh Turn 1 vẫn còn
         shouldThrow = false;
         await foreach (var _ in service.RunStreamingAsync("Mã kho là gì?")) { }
 
-        var lastTurnMessages = fakeClient.RecordedHistory.Last();
-        lastTurnMessages.Should().Contain(m => m.Text != null && m.Text.Contains("Ghi nhớ: mã kho là K1"));
+        fakeClient.RecordedHistory.Last().Should().Contain(m => m.Text != null && m.Text.Contains("Ghi nhớ: mã kho là K1"));
     }
 
     [Fact]
-    public async Task RunStreamingAsync_WhenCanceled_DoesNotResetSession()
+    public async Task RunStreamingAsync_WhenCanceledMidStream_DoesNotResetSession()
     {
-        var cts = new CancellationTokenSource();
-        var fakeClient = new FakeStreamingChatClient(msgs => CreateChunks(["Đang trả lời..."]));
-        var erpOptions = Options.Create(new ErpOptions());
-        var service = new ErpAgentService(fakeClient, erpOptions);
+        bool hang = false;
+        var fakeClient = new FakeStreamingChatClient(msgs => hang ? HangAfterFirstChunk() : CreateChunks(["OK"]));
+        var service = new ErpAgentService(fakeClient, Options.Create(new ErpOptions()));
 
         await foreach (var _ in service.RunStreamingAsync("Nhớ chữ X")) { }
 
-        // Cancel lượt 2
-        cts.Cancel();
+        // Turn 2: hủy sau khi đã nhận chunk đầu
+        hang = true;
+        using var cts = new CancellationTokenSource();
+        var received = new List<string>();
         var act = async () =>
         {
-            await foreach (var _ in service.RunStreamingAsync("Câu bị cancel", cts.Token)) { }
+            await foreach (var chunk in service.RunStreamingAsync("Câu bị cancel", cts.Token))
+            {
+                received.Add(chunk);
+                cts.Cancel();
+            }
         };
         await act.Should().ThrowAsync<OperationCanceledException>();
+        received.Should().HaveCount(1);
 
-        // Lượt 3: context vẫn còn
+        // Turn 3: ngữ cảnh vẫn còn
+        hang = false;
         await foreach (var _ in service.RunStreamingAsync("Nhắc lại chữ X")) { }
 
-        var lastTurnMessages = fakeClient.RecordedHistory.Last();
-        lastTurnMessages.Should().Contain(m => m.Text != null && m.Text.Contains("Nhớ chữ X"));
+        fakeClient.RecordedHistory.Last().Should().Contain(m => m.Text != null && m.Text.Contains("Nhớ chữ X"));
     }
 
     [Fact]
@@ -200,6 +201,19 @@ public class ErpAgentServiceTests
         stats2.TurnCount.Should().Be(1);
         stats2.TotalInputTokens.Should().Be(20);
         stats2.TotalOutputTokens.Should().Be(8);
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> ThrowAfterFirstChunk()
+    {
+        yield return new ChatResponseUpdate(ChatRole.Assistant, "Đang trả lờ");
+        await Task.Yield();
+        throw new HttpRequestException("Mạng chập chờn");
+    }
+
+    private static async IAsyncEnumerable<ChatResponseUpdate> HangAfterFirstChunk([EnumeratorCancellation] CancellationToken ct = default)
+    {
+        yield return new ChatResponseUpdate(ChatRole.Assistant, "Đang trả lời...");
+        await Task.Delay(Timeout.Infinite, ct);
     }
 
     private static async IAsyncEnumerable<ChatResponseUpdate> CreateChunks(string[] chunks)

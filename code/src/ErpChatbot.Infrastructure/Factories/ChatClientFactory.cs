@@ -3,6 +3,7 @@ using ErpChatbot.Core.Models;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
+using OllamaSharp.Models.Exceptions;
 
 namespace ErpChatbot.Infrastructure.Factories;
 
@@ -68,8 +69,9 @@ public class ChatClientFactory : IChatClientFactory
         {
             return (false, $"Không phản hồi sau {_timeoutMs / 1000}s. Vui lòng kiểm tra xem Ollama có bị treo không.");
         }
-        catch (Exception ex) when (ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase) ||
-                                  ex.Message.Contains("pull", StringComparison.OrdinalIgnoreCase))
+        // Chỉ lỗi do chính Ollama báo "model ... not found"; 404 chung của endpoint sai là HttpRequestException bên dưới
+        catch (OllamaException ex) when (ex.Message.Contains("model", StringComparison.OrdinalIgnoreCase) &&
+                                         ex.Message.Contains("not found", StringComparison.OrdinalIgnoreCase))
         {
             return (false, $"Model '{_options.Model}' không tìm thấy trên Ollama. Vui lòng chạy lệnh: 'ollama pull {_options.Model}'.");
         }

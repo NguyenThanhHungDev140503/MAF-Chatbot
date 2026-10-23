@@ -147,14 +147,44 @@ Biến môi trường ưu tiên ghi đè:
      - Stream đầy đủ, `AgentSession` giữ ngữ cảnh qua nhiều turn.
      - Cộng dồn token qua `UsageContent` đúng qua nhiều turn liên tiếp (cumulative, không reset nhầm).
      - `ResetSessionAsync()`: session mới nhưng `SessionStats` giữ nguyên.
-     - Fake `IChatClient` throw giữa stream → không crash, message lỗi rõ, `AgentSession` không tự bị reset.
-     - Cancel (`CancellationToken`) giữa stream → xử lý giống case lỗi mạng (không tự reset session).
+     - Fake `IChatClient` throw giữa stream (**sau khi đã yield ≥1 chunk**) → không crash, message lỗi rõ, `AgentSession` không tự bị reset.
+     - Cancel (`CancellationToken`) giữa stream (**hủy sau khi đã nhận ≥1 chunk**, không phải token hủy sẵn) → xử lý giống case lỗi mạng (không tự reset session).
    - **Cli (qua `ErpAgentService` + input giả lập)**: lệnh `/reset /stats /info /exit` từng cái; lệnh sai cú pháp (`/xxx`) → in hint, không gọi LLM; input rỗng → bỏ qua.
 2. **Kế thừa xuyên suốt lộ trình**:
    - **Ngày 2**: Thêm project `ErpChatbot.Tools.Erp` hoặc danh sách `AIFunction` tra cứu kho, công nợ và inject vào Agent.
    - **Ngày 3**: Tách hoặc bọc các Tool thành MCP Server (`ModelContextProtocol.AspNetCore`).
    - **Ngày 4**: Thêm project Web API (`ErpChatbot.Api`) sử dụng chung `IErpAgentService` hoặc AG-UI SSE hosting (`Microsoft.Agents.AI.Hosting.AGUI.AspNetCore`). **Bắt buộc**: tạo `ErpAgentService` theo scope/instance riêng mỗi user — không đăng ký Singleton (xem §2.1).
    - **Ngày 5 & 6**: Bổ sung OpenTelemetry tracing, Guardrails và `ApprovalRequiredAIFunction` cho các thao tác ghi.
+
+### 4.1. Bảng coverage test
+
+Thay cho "coverage diagram 17 path" trước đây (diagram đó chỉ nằm trong chat review, chưa từng ghi vào doc, và đã lỗi thời sau D5/D7/D9). Cột "Test" theo code sau Task 6 của implementation plan (tất cả 23 dòng đã phủ).
+
+| # | Path | Test | Trạng thái |
+|---|---|---|---|
+| 1 | `CreateClient()` provider `ollama` | `CreateClient_WithOllamaProvider_ReturnsConfiguredChatClient` | Có |
+| 2 | Provider khác → `InvalidOperationException` | `CreateClient_WithUnsupportedProvider_ThrowsInvalidOperationException` | Có |
+| 3 | Health check: model sẵn sàng | `CheckHealthAsync_WhenModelReady_ReturnsHealthy` | Có |
+| 4 | Health check: thiếu model (lỗi đúng dạng OllamaSharp ném ra) | `CheckHealthAsync_WhenModelMissing_ReturnsModelNotFoundMessage` | Có |
+| 5 | Health check: endpoint sai trả 404 chung → KHÔNG báo "thiếu model" | `CheckHealthAsync_WhenEndpointReturnsGeneric404_ReportsConnectionNotMissingModel` | Có |
+| 6 | Health check: timeout 5s | `CheckHealthAsync_WhenTimeoutExceeded_ReturnsTimeoutMessage` | Có |
+| 7 | Health check: mất kết nối | `CheckHealthAsync_WhenEndpointUnreachable_ReturnsConnectionErrorMessage` | Có |
+| 8 | Stream đủ, đúng thứ tự | `RunStreamingAsync_YieldsStreamUpdatesInOrder` | Có |
+| 9 | Session tạo lazy, giữ ngữ cảnh qua nhiều turn | `RunStreamingAsync_RetainsContextAcrossConsecutiveTurns` | Có |
+| 10 | Cộng dồn token qua `UsageContent` | `RunStreamingAsync_AccumulatesTokensViaUsageContent` | Có |
+| 11 | `/reset`: session mới, stats giữ nguyên | `ResetSessionAsync_CreatesNewSession_RetainsSessionStats` | Có |
+| 12 | Throw sau khi đã yield ≥1 chunk → không reset session | `RunStreamingAsync_WhenClientThrowsException_DoesNotResetSession` | Có |
+| 13 | Cancel sau khi đã nhận ≥1 chunk → không reset session | `RunStreamingAsync_WhenCanceledMidStream_DoesNotResetSession` | Có |
+| 14 | Hai phiên cô lập history + stats (D1) | `TwoConversations_ShouldHaveIsolatedHistoryAndStats` | Có |
+| 15 | CLI `/reset` | `ProcessInput_WithResetCommand_ResetsSessionAndDoesNotCallLlm` | Có |
+| 16 | CLI `/stats` in đúng số lượt + token | `ProcessInput_WithStatsCommand_ShowsStatsAndDoesNotCallLlm` | Có |
+| 17 | CLI `/info` | `ProcessInput_WithInfoCommand_DisplaysConfiguration` | Có |
+| 18 | CLI `/exit` thoát sạch | `ProcessInput_WithExitCommand_ReturnsExitWithoutCallingLlm` + `ProcessLine_WithExitCommand_StopsLoop` | Có |
+| 19 | CLI `/xxx` → hint, không gọi LLM | `ProcessInput_WithInvalidSlashCommand_ShowsHintWithoutCallingLlm` | Có |
+| 20 | CLI input rỗng → bỏ qua | `ProcessInput_WithEmptyOrWhitespace_IsIgnoredWithoutCallingLlm` | Có |
+| 21 | CLI: lỗi mạng / `TimeoutException` trong turn → `[Mất kết nối...]`, không in "(đã hủy phản hồi)" | `ProcessLine_WhenNetworkErrorMidStream_ShowsConnectionLostAndKeepsSession` + `ProcessLine_WhenHttpTimeoutMidStream_ShowsConnectionLostNotUserCancel` | Có |
+| 22 | CLI: Ctrl+C giữa stream → "(đã hủy phản hồi)", không crash | `ProcessLine_WhenUserCancelsMidStream_ShowsCancelledAndDoesNotCrash` | Có |
+| 23 | CLI: health check fail lúc khởi động → cảnh báo rõ, không crash | `PrintHealth_WhenUnhealthy_PrintsWarningWithoutThrowing` | Có |
 
 ---
 
@@ -199,6 +229,21 @@ Biến môi trường ưu tiên ghi đè:
 
 Tổng hợp từ review này. Mỗi task bám 1 finding cụ thể ở trên.
 
+**Bảng quyết định D1–D10** (từ `/plan-eng-review`):
+
+| D | Quyết định | Nằm ở |
+|---|---|---|
+| D1 | `ErpAgentService` giữ session của 1 user — không đăng ký Singleton (Ngày 4 dùng scoped/instance riêng) | §2.1, §4 mục 2 |
+| D2 | Lỗi giữa stream: báo lỗi rõ, KHÔNG tự reset session | §3.3, §3.4, §4 |
+| D3 | `/reset` tạo session mới, giữ nguyên `SessionStats` | §2.1, §4 |
+| D4 | Lệnh `/xxx` không hợp lệ: in hint, không gọi LLM | §4 |
+| D5 | Health check có timeout 5s | §3.2, §3.4 |
+| D6 | Agent chỉ phụ thuộc Core, không phụ thuộc Infrastructure; composition ở Cli | §2.1, §7 |
+| D7 | Health check gửi request thật để xác nhận model; "thiếu model" phải báo khác "mất kết nối" | §3.2, §3.4 |
+| D8 | Lấy token qua `UsageContent`, không theo pattern Ex3 | §3.3, §4 |
+| D9 | Ngày 1 chỉ hỗ trợ Ollama (bỏ OpenAI — YAGNI) | §2.1, §3.1, §5 |
+| D10 | Ctrl+C giữa stream xử lý như lỗi mạng, không tự reset session | §3.3, §3.4 |
+
 - [ ] **T7 (P1, human: ~5min / CC: ~1min)** — Core — Ghi rõ session-ownership trong `IErpAgentService`
   - Surfaced by: Architecture D1 — blast radius multi-tenant nếu Ngày 4 đăng ký Singleton
   - Files: `docs/superpowers/specs/2026-10-20-day01-maf-erp-chatbot-design.md` (đã sửa), XML doc comment khi code thật
@@ -215,10 +260,10 @@ Tổng hợp từ review này. Mỗi task bám 1 finding cụ thể ở trên.
   - Surfaced by: Architecture D2 + Outside voice D10
   - Files: `ErpChatbot.Agent/ErpAgentService.cs`, `ErpChatbot.Cli/Program.cs`
   - Verify: test Fake `IChatClient` throw giữa stream + test Ctrl+C — cả hai không tự gọi `CreateSessionAsync()`
-- [ ] **T8 (P1, human: ~2h / CC: ~20min)** — Tests — Viết 17 test case theo coverage diagram
-  - Surfaced by: Test review — 0/17 path có test cụ thể trong doc gốc
+- [x] **T8 (P1, human: ~2h / CC: ~20min)** — Tests — Phủ mọi path trong bảng §4.1
+  - Surfaced by: Test review — doc gốc không có path nào có test cụ thể
   - Files: `ErpChatbot.Tests/*`
-  - Verify: `dotnet test` xanh toàn bộ, coverage khớp diagram §4.1
+  - Verify: `dotnet test` xanh toàn bộ, mọi dòng trong bảng §4.1 ở trạng thái "Có"
 - [ ] **T4 (P2, human: ~5min / CC: ~1min)** — Agent — Trích xuất token qua `UsageContent`, không theo pattern Ex3
   - Surfaced by: Outside voice D8
   - Files: `ErpChatbot.Agent/ErpAgentService.cs`

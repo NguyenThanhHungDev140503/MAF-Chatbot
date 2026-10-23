@@ -1,4 +1,3 @@
-using System.Diagnostics;
 using System.Text;
 using ErpChatbot.Agent.Services;
 using ErpChatbot.Cli;
@@ -65,20 +64,10 @@ Console.WriteLine("Gõ /info để xem trợ giúp, /reset để xoá lịch s�
 // 2. Health Check kiểm tra kết nối tới mô hình
 Console.Write("Đang kiểm tra kết nối LLM... ");
 var (isHealthy, healthMessage) = await factory.CheckHealthAsync();
-if (isHealthy)
-{
-    Console.ForegroundColor = ConsoleColor.Green;
-    Console.WriteLine($"[SẴN SÀNG] {healthMessage}\n");
-    Console.ResetColor();
-}
-else
-{
-    Console.ForegroundColor = ConsoleColor.Yellow;
-    Console.WriteLine($"\n[CẢNH BÁO KẾT NỐI] {healthMessage}\n");
-    Console.ResetColor();
-}
+CliChatLoop.PrintHealth(isHealthy, healthMessage);
 
 // 3. Vòng lặp Chat chính
+var chatLoop = new CliChatLoop(agentService, commandHandler);
 while (true)
 {
     Console.ForegroundColor = ConsoleColor.Cyan;
@@ -98,57 +87,7 @@ while (true)
 
     try
     {
-        var inputResult = await commandHandler.HandleInputAsync(rawInput, turnCts.Token);
-        if (inputResult == CliInputResult.Exit)
-        {
-            Console.WriteLine("Tạm biệt!");
-            break;
-        }
-        if (inputResult != CliInputResult.SendToLlm)
-        {
-            continue;
-        }
-
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.Write("Trợ lý: ");
-        Console.ResetColor();
-
-        var stopwatch = Stopwatch.StartNew();
-        var prevTurnStats = agentService.GetStats();
-        long prevTotalTokens = prevTurnStats.TotalTokens;
-
-        await foreach (var chunk in agentService.RunStreamingAsync(rawInput, turnCts.Token))
-        {
-            Console.Write(chunk);
-        }
-        stopwatch.Stop();
-        Console.WriteLine();
-
-        var currentStats = agentService.GetStats();
-        long turnTokens = currentStats.TotalTokens - prevTotalTokens;
-
-        Console.ForegroundColor = ConsoleColor.DarkGray;
-        Console.WriteLine($"  [Thời gian: {stopwatch.ElapsedMilliseconds}ms | Token lượt này: {turnTokens} | Token tích luỹ: {currentStats.TotalTokens}]");
-        Console.ResetColor();
-        Console.WriteLine();
-    }
-    catch (OperationCanceledException)
-    {
-        Console.ForegroundColor = ConsoleColor.Yellow;
-        Console.WriteLine("\n(đã hủy phản hồi)");
-        Console.ResetColor();
-    }
-    catch (HttpRequestException ex)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"\n[Mất kết nối tới Ollama: {ex.Message}. Thử lại hoặc gõ /reset]");
-        Console.ResetColor();
-    }
-    catch (Exception ex)
-    {
-        Console.ForegroundColor = ConsoleColor.Red;
-        Console.WriteLine($"\n[Lỗi xử lý: {ex.Message}]");
-        Console.ResetColor();
+        if (!await chatLoop.ProcessLineAsync(rawInput, turnCts.Token)) break;
     }
     finally
     {

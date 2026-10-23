@@ -4,6 +4,7 @@ using FluentAssertions;
 using Microsoft.Extensions.AI;
 using Microsoft.Extensions.Options;
 using OllamaSharp;
+using OllamaSharp.Models.Exceptions;
 using Xunit;
 
 namespace ErpChatbot.Tests.Infrastructure;
@@ -76,7 +77,7 @@ public class ChatClientFactoryTests
     {
         var options = Options.Create(new LlmOptions { Provider = "ollama", Model = "non-existent-model" });
         var fakeClient = new FakeChatClient((msgs, opt, ct) =>
-            throw new InvalidOperationException("model 'non-existent-model' not found, try pulling it first"));
+            throw new OllamaException("model 'non-existent-model' not found"));
 
         var factory = new ChatClientFactory(options, _ => fakeClient);
 
@@ -117,5 +118,20 @@ public class ChatClientFactoryTests
 
         isHealthy.Should().BeFalse();
         message.Should().Contain("Không thể kết nối tới Ollama");
+    }
+
+    [Fact]
+    public async Task CheckHealthAsync_WhenEndpointReturnsGeneric404_ReportsConnectionNotMissingModel()
+    {
+        var options = Options.Create(new LlmOptions { Provider = "ollama", Model = "llama3.2" });
+        var fakeClient = new FakeChatClient((msgs, opt, ct) =>
+            throw new HttpRequestException("Response status code does not indicate success: 404 (Not Found).", null, System.Net.HttpStatusCode.NotFound));
+
+        var factory = new ChatClientFactory(options, _ => fakeClient);
+
+        var (isHealthy, message) = await factory.CheckHealthAsync();
+
+        isHealthy.Should().BeFalse();
+        message.Should().Contain("Không thể kết nối tới Ollama").And.NotContain("ollama pull");
     }
 }

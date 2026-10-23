@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using ErpChatbot.Core.Interfaces;
 using ErpChatbot.Core.Models;
 using Microsoft.Extensions.Options;
@@ -85,5 +86,85 @@ public class CliCommandHandler
         }
 
         return CliInputResult.SendToLlm;
+    }
+}
+
+public class CliChatLoop
+{
+    private readonly IErpAgentService _agentService;
+    private readonly CliCommandHandler _commandHandler;
+
+    public CliChatLoop(IErpAgentService agentService, CliCommandHandler commandHandler)
+    {
+        _agentService = agentService;
+        _commandHandler = commandHandler;
+    }
+
+    public static void PrintHealth(bool isHealthy, string message)
+    {
+        Console.ForegroundColor = isHealthy ? ConsoleColor.Green : ConsoleColor.Yellow;
+        Console.WriteLine(isHealthy ? $"[SẴN SÀNG] {message}\n" : $"\n[CẢNH BÁO KẾT NỐI] {message}\n");
+        Console.ResetColor();
+    }
+
+    /// <summary>Xử lý một dòng input. Trả về false khi người dùng thoát.</summary>
+    /// <param name="userCancellation">Token chỉ bị hủy khi người dùng bấm Ctrl+C.</param>
+    public async Task<bool> ProcessLineAsync(string rawInput, CancellationToken userCancellation)
+    {
+        try
+        {
+            var inputResult = await _commandHandler.HandleInputAsync(rawInput, userCancellation);
+            if (inputResult == CliInputResult.Exit)
+            {
+                Console.WriteLine("Tạm biệt!");
+                return false;
+            }
+            if (inputResult != CliInputResult.SendToLlm)
+            {
+                return true;
+            }
+
+            Console.ForegroundColor = ConsoleColor.Green;
+            Console.Write("Trợ lý: ");
+            Console.ResetColor();
+
+            var stopwatch = Stopwatch.StartNew();
+            long prevTotalTokens = _agentService.GetStats().TotalTokens;
+
+            await foreach (var chunk in _agentService.RunStreamingAsync(rawInput, userCancellation))
+            {
+                Console.Write(chunk);
+            }
+            stopwatch.Stop();
+            Console.WriteLine();
+
+            var currentStats = _agentService.GetStats();
+            Console.ForegroundColor = ConsoleColor.DarkGray;
+            Console.WriteLine($"  [Thời gian: {stopwatch.ElapsedMilliseconds}ms | Token lượt này: {currentStats.TotalTokens - prevTotalTokens} | Token tích luỹ: {currentStats.TotalTokens}]");
+            Console.ResetColor();
+            Console.WriteLine();
+        }
+        catch (OperationCanceledException) when (userCancellation.IsCancellationRequested)
+        {
+            WriteLine(ConsoleColor.Yellow, "\n(đã hủy phản hồi)");
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TimeoutException or OperationCanceledException)
+        {
+            // OperationCanceledException tới đây là timeout của HttpClient, không phải user hủy
+            WriteLine(ConsoleColor.Red, $"\n[Mất kết nối tới Ollama: {ex.Message}. Thử lại hoặc gõ /reset]");
+        }
+        catch (Exception ex)
+        {
+            WriteLine(ConsoleColor.Red, $"\n[Lỗi xử lý: {ex.Message}]");
+        }
+
+        return true;
+    }
+
+    private static void WriteLine(ConsoleColor color, string text)
+    {
+        Console.ForegroundColor = color;
+        Console.WriteLine(text);
+        Console.ResetColor();
     }
 }

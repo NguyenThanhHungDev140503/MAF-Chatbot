@@ -7,6 +7,7 @@ using Xunit;
 
 namespace ErpChatbot.Tests.Cli;
 
+[Collection("Console")]
 public class CliCommandTests
 {
     private class FakeAgentService : IErpAgentService
@@ -53,10 +54,34 @@ public class CliCommandTests
         service.Stats.RecordTurn(50, 20);
         var handler = new CliCommandHandler(service, new LlmOptions(), new ErpOptions());
 
-        var result = await handler.HandleInputAsync("/stats", CancellationToken.None);
+        using var sw = new StringWriter();
+        var originalOut = Console.Out;
+        Console.SetOut(sw);
+        try
+        {
+            var result = await handler.HandleInputAsync("/stats", CancellationToken.None);
+            result.Should().Be(CliInputResult.Handled);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
 
-        result.Should().Be(CliInputResult.Handled);
+        sw.ToString().Should().Contain("Số lượt trò chuyện: 1").And.Contain("50").And.Contain("20").And.Contain("70");
         service.PromptCalls.Should().Be(0);
+    }
+
+    [Fact]
+    public async Task ProcessInput_WithExitCommand_ReturnsExitWithoutCallingLlm()
+    {
+        var service = new FakeAgentService();
+        var handler = new CliCommandHandler(service, new LlmOptions(), new ErpOptions());
+
+        var result = await handler.HandleInputAsync("/exit", CancellationToken.None);
+
+        result.Should().Be(CliInputResult.Exit);
+        service.PromptCalls.Should().Be(0);
+        service.ResetCalls.Should().Be(0);
     }
 
     [Fact]

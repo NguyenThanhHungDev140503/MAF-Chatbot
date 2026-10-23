@@ -18,6 +18,7 @@
 - Health check: Timeout cứng 5s, gọi request thật xác nhận model đã nạp, phân biệt lỗi model-not-found và mất kết nối.
 - Token tracking: Trích xuất qua `UsageContent` trong `AgentResponseUpdate.Contents`, không dùng pattern `ToChatResponse()` của Ex3.
 - Error resilience: Mất kết nối hoặc Ctrl+C ngắt stream không được tự động reset session.
+- Test coverage: mọi dòng trong bảng §4.1 của spec phải ở trạng thái "Có" (Task 6).
 
 ---
 
@@ -1371,3 +1372,24 @@ cd /home/nguyen-thanh-hung/Documents/MAF-Chatbot
 git add code/README.md
 git commit -m "docs: add code README and complete Day 1 MAF ERP Chatbot verification"
 ```
+
+---
+
+### Task 6: Hardening theo spec §4.1 (lấp 9 dòng coverage chưa đạt + 3 finding của code review)
+
+Nguồn: bảng §4.1 spec (các dòng #4, #5, #12, #13, #16, #18, #21, #22, #23) và review `7f2f5b3..77ef075`.
+
+**Files:**
+- Modify: `code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs` — nhận diện "thiếu model" bằng `OllamaException` + message, không còn match chuỗi "not found"/"pull" bừa bãi (endpoint sai trả 404 chung phải báo "mất kết nối").
+- Modify: `code/src/ErpChatbot.Cli/CliRunner.cs` — thêm `CliChatLoop` (xử lý 1 dòng input: lệnh, stream, bắt lỗi) và `PrintHealth`; tách khỏi `Program.cs` để test được.
+- Modify: `code/src/ErpChatbot.Cli/Program.cs` — gọi `CliChatLoop`; chỉ in "(đã hủy phản hồi)" khi chính user hủy; timeout/`TaskCanceledException` từ HTTP in `[Mất kết nối...]`.
+- Modify: `code/tests/ErpChatbot.Tests/Infrastructure/ChatClientFactoryTests.cs` (#4 dùng `OllamaException`, #5 mới)
+- Modify: `code/tests/ErpChatbot.Tests/Agent/ErpAgentServiceTests.cs` (#12 throw sau ≥1 chunk, #13 cancel sau ≥1 chunk)
+- Modify: `code/tests/ErpChatbot.Tests/Cli/CliCommandTests.cs` (#16 kiểm output `/stats`, #18 `/exit`)
+- Create: `code/tests/ErpChatbot.Tests/Cli/CliChatLoopTests.cs` (#21, #22, #23)
+
+- [x] **Step 1: Sửa/viết test (#4, #5, #12, #13, #16, #18, #21, #22, #23)**; chạy `dotnet test` → các test mới FAIL (#5, #21, #22, #23 chưa có code; #4 FAIL vì factory chưa nhận `OllamaException`).
+- [x] **Step 2: Sửa `ChatClientFactory`** (catch `OllamaException` khi message chứa "model" và "not found").
+- [x] **Step 3: Thêm `CliChatLoop` + `PrintHealth`, sửa `Program.cs`**.
+- [x] **Step 4: `dotnet test` xanh toàn bộ; mọi dòng §4.1 = "Có"; cập nhật bảng §4.1 và tick T8 trong spec.**
+- [x] **Step 5: Commit** `fix(cli,infra): close day-01 coverage gaps from design §4.1`.

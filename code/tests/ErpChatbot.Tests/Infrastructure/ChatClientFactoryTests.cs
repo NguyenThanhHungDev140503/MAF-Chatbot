@@ -134,4 +134,15 @@ public class ChatClientFactoryTests
         isHealthy.Should().BeFalse();
         message.Should().Contain("Không thể kết nối tới Ollama").And.NotContain("ollama pull");
     }
+
+    [Fact]
+    public void CreateClient_WithAccessCredentials_ReturnsOllamaClient()
+    {
+        var llm = new LlmOptions { Ollama = { Endpoint = "https://ollama.example.com", AccessClientId = "id.access", AccessClientSecret = "secret" } };
+        var factory = new ChatClientFactory(Options.Create(llm));
+
+        using var client = factory.CreateClient();
+
+        client.GetService(typeof(OllamaApiClient)).Should().NotBeNull();
+    }
 }

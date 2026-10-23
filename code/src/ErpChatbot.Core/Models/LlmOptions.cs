@@ -14,4 +14,8 @@ public class LlmOptions
 public class OllamaOptions
 {
     public string Endpoint { get; set; } = "http://localhost:11434";
+
+    // Cloudflare Access service token; để trống khi gọi Ollama trực tiếp không qua Access.
+    public string? AccessClientId { get; set; }
+    public string? AccessClientSecret { get; set; }
 }

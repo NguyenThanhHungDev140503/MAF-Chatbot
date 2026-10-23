@@ -38,7 +38,7 @@ public class ChatClientFactory : IChatClientFactory
 
         return _options.Provider.ToLowerInvariant() switch
         {
-            "ollama" => new ChatClientBuilder(new OllamaApiClient(new Uri(_options.Ollama.Endpoint), _options.Model))
+            "ollama" => new ChatClientBuilder(CreateOllamaClient())
                 .ConfigureOptions(opt =>
                 {
                     opt.Temperature ??= _options.Temperature;
@@ -48,6 +48,20 @@ public class ChatClientFactory : IChatClientFactory
             _ => throw new InvalidOperationException(
                 $"LLM_PROVIDER không hợp lệ: '{_options.Provider}'. Ngày 1 chỉ hỗ trợ 'ollama'.")
         };
+    }
+
+    private OllamaApiClient CreateOllamaClient()
+    {
+        var ollama = _options.Ollama;
+        if (string.IsNullOrWhiteSpace(ollama.AccessClientId) || string.IsNullOrWhiteSpace(ollama.AccessClientSecret))
+        {
+            return new OllamaApiClient(new Uri(ollama.Endpoint), _options.Model);
+        }
+
+        var http = new HttpClient { BaseAddress = new Uri(ollama.Endpoint) };
+        http.DefaultRequestHeaders.Add("CF-Access-Client-Id", ollama.AccessClientId);
+        http.DefaultRequestHeaders.Add("CF-Access-Client-Secret", ollama.AccessClientSecret);
+        return new OllamaApiClient(http, _options.Model);
     }
 
     public async Task<(bool IsHealthy, string Message)> CheckHealthAsync(CancellationToken cancellationToken = default)

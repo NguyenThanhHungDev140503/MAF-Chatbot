@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using ErpChatbot.Core.Interfaces;
 using ErpChatbot.Core.Models;
+using ErpChatbot.Core.Models.Rbac;
 using Microsoft.Extensions.Options;
 
 namespace ErpChatbot.Cli;
@@ -16,6 +17,7 @@ public enum CliInputResult
 public class CliCommandHandler
 {
     private readonly IErpAgentService _agentService;
+    private readonly IUserContext _userContext;
     private readonly LlmOptions _llmOptions;
     private readonly ErpOptions _erpOptions;
 
@@ -23,13 +25,35 @@ public class CliCommandHandler
         IErpAgentService agentService,
         IOptions<LlmOptions> llmOptions,
         IOptions<ErpOptions> erpOptions)
-        : this(agentService, llmOptions.Value, erpOptions.Value)
+        : this(agentService, new UserContext(), llmOptions.Value, erpOptions.Value)
     {
     }
 
-    public CliCommandHandler(IErpAgentService agentService, LlmOptions llmOptions, ErpOptions erpOptions)
+    public CliCommandHandler(
+        IErpAgentService agentService,
+        LlmOptions llmOptions,
+        ErpOptions erpOptions)
+        : this(agentService, new UserContext(), llmOptions, erpOptions)
+    {
+    }
+
+    public CliCommandHandler(
+        IErpAgentService agentService,
+        IUserContext userContext,
+        IOptions<LlmOptions> llmOptions,
+        IOptions<ErpOptions> erpOptions)
+        : this(agentService, userContext, llmOptions.Value, erpOptions.Value)
+    {
+    }
+
+    public CliCommandHandler(
+        IErpAgentService agentService,
+        IUserContext userContext,
+        LlmOptions llmOptions,
+        ErpOptions erpOptions)
     {
         _agentService = agentService;
+        _userContext = userContext;
         _llmOptions = llmOptions;
         _erpOptions = erpOptions;
     }
@@ -66,16 +90,59 @@ public class CliCommandHandler
             return CliInputResult.Handled;
         }
 
+        if (trimmed.StartsWith("/user", StringComparison.OrdinalIgnoreCase) ||
+            trimmed.StartsWith("/role", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = trimmed.Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+            if (parts.Length < 2)
+            {
+                Console.WriteLine("\n[HƯỚNG DẪN] Cú pháp: /user <tên_user> (ví dụ: /user sales_user, /user accountant_user, /user admin_user)\n");
+                return CliInputResult.Handled;
+            }
+
+            string targetUser = parts[1];
+            try
+            {
+                _userContext.SwitchUser(targetUser);
+                var u = _userContext.CurrentUser;
+                Console.ForegroundColor = ConsoleColor.Green;
+                Console.WriteLine($"\n[NGƯỜI DÙNG] Đã chuyển sang tài khoản: {u.Username} ({u.FullName})");
+                Console.WriteLine($"  Vai trò: {string.Join(", ", u.Roles.Select(r => r.Name))}");
+                Console.WriteLine($"  Quyền hạn: {string.Join(", ", u.EffectivePermissions)}\n");
+                Console.ResetColor();
+            }
+            catch (Exception ex)
+            {
+                Console.ForegroundColor = ConsoleColor.Red;
+                Console.WriteLine($"\n[LỖI] {ex.Message}\n");
+                Console.ResetColor();
+            }
+            return CliInputResult.Handled;
+        }
+
+        if (trimmed.Equals("/whoami", StringComparison.OrdinalIgnoreCase))
+        {
+            var u = _userContext.CurrentUser;
+            Console.WriteLine($"\n--- THÔNG TIN TÀI KHOẢN ĐANG ĐĂNG NHẬP ---");
+            Console.WriteLine($"Mã:       {u.Id}");
+            Console.WriteLine($"Tên user: {u.Username}");
+            Console.WriteLine($"Họ tên:   {u.FullName}");
+            Console.WriteLine($"Vai trò:  {string.Join(", ", u.Roles.Select(r => $"{r.Name} ({r.Description})"))}");
+            Console.WriteLine($"Quyền:    {string.Join(", ", u.EffectivePermissions)}\n");
+            return CliInputResult.Handled;
+        }
+
         if (trimmed.Equals("/info", StringComparison.OrdinalIgnoreCase) ||
             trimmed.Equals("/help", StringComparison.OrdinalIgnoreCase))
         {
+            var u = _userContext.CurrentUser;
             Console.WriteLine($"\n--- THÔNG TIN HỆ THỐNG ---");
             Console.WriteLine($"Trợ lý:    {_erpOptions.AssistantName} ({_erpOptions.CompanyName})");
             Console.WriteLine($"Chỉ dẫn:   {_erpOptions.Instructions}");
-            Console.WriteLine($"Provider:  {_llmOptions.Provider}");
-            Console.WriteLine($"Model:     {_llmOptions.Model}");
+            Console.WriteLine($"Tài khoản: {u.Username} (Vai trò: {string.Join(", ", u.Roles.Select(r => r.Name))})");
+            Console.WriteLine($"Provider:  {_llmOptions.Provider} | Model: {_llmOptions.Model}");
             Console.WriteLine($"Endpoint:  {_llmOptions.Ollama.Endpoint}");
-            Console.WriteLine($"Lệnh sẵn sàng: /reset, /stats, /info, /exit\n");
+            Console.WriteLine($"Lệnh: /user <tên>, /whoami, /reset, /stats, /info, /exit\n");
             return CliInputResult.Handled;
         }
 
@@ -107,8 +174,6 @@ public class CliChatLoop
         Console.ResetColor();
     }
 
-    /// <summary>Xử lý một dòng input. Trả về false khi người dùng thoát.</summary>
-    /// <param name="userCancellation">Token chỉ bị hủy khi người dùng bấm Ctrl+C.</param>
     public async Task<bool> ProcessLineAsync(string rawInput, CancellationToken userCancellation)
     {
         try
@@ -128,19 +193,37 @@ public class CliChatLoop
             Console.Write("Trợ lý: ");
             Console.ResetColor();
 
-            var stopwatch = Stopwatch.StartNew();
-            long prevTotalTokens = _agentService.GetStats().TotalTokens;
+            long turnTokens = 0;
+            long elapsedMs = 0;
 
-            await foreach (var chunk in _agentService.RunStreamingAsync(rawInput, userCancellation))
+            await foreach (var evt in _agentService.RunStreamingAsync(rawInput, HandleApprovalRequestAsync, userCancellation))
             {
-                Console.Write(chunk);
+                switch (evt)
+                {
+                    case AgentTextChunkEvent chunk:
+                        Console.Write(chunk.Text);
+                        break;
+                    case AgentToolExecutionEvent toolEvt:
+                        Console.ForegroundColor = ConsoleColor.DarkGray;
+                        Console.WriteLine(toolEvt.Success 
+                            ? $"\n   [tool] {toolEvt.ToolName}({toolEvt.ArgumentsSummary}) -> ok ({toolEvt.ElapsedMs}ms)" 
+                            : $"\n   [tool] {toolEvt.ToolName} -> LỖI: {toolEvt.Error}");
+                        Console.ResetColor();
+                        Console.ForegroundColor = ConsoleColor.Green;
+                        Console.Write("Trợ lý: ");
+                        Console.ResetColor();
+                        break;
+                    case AgentTurnCompletedEvent completed:
+                        turnTokens = completed.InputTokens + completed.OutputTokens;
+                        elapsedMs = completed.ElapsedMs;
+                        break;
+                }
             }
-            stopwatch.Stop();
-            Console.WriteLine();
 
+            Console.WriteLine();
             var currentStats = _agentService.GetStats();
             Console.ForegroundColor = ConsoleColor.DarkGray;
-            Console.WriteLine($"  [Thời gian: {stopwatch.ElapsedMilliseconds}ms | Token lượt này: {currentStats.TotalTokens - prevTotalTokens} | Token tích luỹ: {currentStats.TotalTokens}]");
+            Console.WriteLine($"  [Thời gian: {elapsedMs}ms | Token lượt này: {turnTokens} | Token tích luỹ: {currentStats.TotalTokens}]");
             Console.ResetColor();
             Console.WriteLine();
         }
@@ -150,7 +233,6 @@ public class CliChatLoop
         }
         catch (Exception ex) when (ex is HttpRequestException or TimeoutException or OperationCanceledException)
         {
-            // OperationCanceledException tới đây là timeout của HttpClient, không phải user hủy
             WriteLine(ConsoleColor.Red, $"\n[Mất kết nối tới Ollama: {ex.Message}. Thử lại hoặc gõ /reset]");
         }
         catch (Exception ex)
@@ -159,6 +241,27 @@ public class CliChatLoop
         }
 
         return true;
+    }
+
+    private static Task<bool> HandleApprovalRequestAsync(AgentApprovalRequiredEvent req)
+    {
+        Console.ForegroundColor = ConsoleColor.Yellow;
+        string argsStr = string.Join(", ", req.Arguments.Select(a => $"{a.Key}={a.Value}"));
+        Console.Write($"\n   [cần duyệt] {req.ToolName}({argsStr}). Đồng ý? (y/n): ");
+        Console.ResetColor();
+
+        string? response = Console.ReadLine()?.Trim().ToLowerInvariant();
+        bool approved = response == "y";
+
+        Console.ForegroundColor = approved ? ConsoleColor.Green : ConsoleColor.Red;
+        Console.WriteLine(approved ? "   -> Đã duyệt thực thi." : "   -> Đã từ chối thực thi.");
+        Console.ResetColor();
+
+        Console.ForegroundColor = ConsoleColor.Green;
+        Console.Write("Trợ lý: ");
+        Console.ResetColor();
+
+        return Task.FromResult(approved);
     }
 
     private static void WriteLine(ConsoleColor color, string text)

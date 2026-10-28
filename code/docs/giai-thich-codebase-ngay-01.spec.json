@@ -1,0 +1,1290 @@
+{
+  "repo": "/home/nguyen-thanh-hung/Documents/MAF-Chatbot",
+  "pages": [
+    {
+      "name": "00 Tổng quan - Sequence",
+      "title": "00 Tổng quan: một lượt chat từ dòng nhập đến token",
+      "subtitle": "Code @ 23cd011",
+      "type": "sequence",
+      "actors": [
+        {
+          "actor": true,
+          "key": "U",
+          "label": "Người dùng"
+        },
+        {
+          "key": "P",
+          "label": "Program.cs"
+        },
+        {
+          "key": "L",
+          "label": "CliChatLoop"
+        },
+        {
+          "key": "C",
+          "label": "CliCommandHandler"
+        },
+        {
+          "key": "S",
+          "label": "ErpAgentService"
+        },
+        {
+          "key": "A",
+          "label": "AIAgent (MAF)"
+        },
+        {
+          "key": "M",
+          "label": "Ollama\nIChatClient"
+        }
+      ],
+      "steps": [
+        {
+          "from": "U",
+          "to": "P",
+          "label": "Gõ một dòng, Enter",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 78,
+            "end": 78
+          }
+        },
+        {
+          "from": "P",
+          "to": "L",
+          "label": "ProcessLineAsync(rawInput, turnCts.Token)",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 91,
+            "end": 91
+          }
+        },
+        {
+          "from": "L",
+          "to": "C",
+          "label": "HandleInputAsync(rawInput)",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 116,
+            "end": 116
+          }
+        },
+        {
+          "from": "C",
+          "to": "L",
+          "label": "SendToLlm (dòng không bắt đầu bằng '/')",
+          "style": "return",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 88,
+            "end": 88
+          }
+        },
+        {
+          "from": "L",
+          "to": "S",
+          "label": "RunStreamingAsync(rawInput, token)",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 134,
+            "end": 134
+          }
+        },
+        {
+          "from": "S",
+          "to": "A",
+          "label": "Lượt đầu tạo AgentSession, rồi RunStreamingAsync(prompt, _session)",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+              "start": 37,
+              "end": 37
+            },
+            {
+              "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+              "start": 43,
+              "end": 43
+            }
+          ]
+        },
+        {
+          "from": "A",
+          "to": "M",
+          "label": "Gửi lịch sử session + prompt tới model (chưa xác minh: nằm trong thư viện MAF)",
+          "code": null
+        },
+        {
+          "from": "M",
+          "to": "A",
+          "label": "Stream update: text + UsageContent (chưa xác minh)",
+          "style": "return",
+          "code": null
+        },
+        {
+          "from": "S",
+          "to": "L",
+          "label": "yield return update.Text",
+          "style": "return",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 67,
+            "end": 70
+          }
+        },
+        {
+          "from": "L",
+          "to": "U",
+          "label": "Console.Write(chunk)",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 134,
+            "end": 137
+          }
+        },
+        {
+          "from": "S",
+          "to": "S",
+          "label": "Hết stream: RecordTurn(input, output)",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 87,
+            "end": 87
+          }
+        }
+      ]
+    },
+    {
+      "name": "F1a Cấu hình và DI - Kiến trúc",
+      "type": "architecture",
+      "subtitle": "Code @ 23cd011",
+      "problem": "Provider, model, endpoint phải đổi được mà không sửa code: chạy local, qua tunnel Cloudflare, hoặc trong test. Toàn bộ việc lắp ráp nằm ở một nơi là Program.cs; các project khác chỉ biết interface.",
+      "heading": "F1a — Composition Root: ai tạo ai, ai phụ thuộc ai",
+      "summary": {
+        "title": "Flow 1 trong 1 phút: từ file cấu hình đến một agent chạy được",
+        "context": {
+          "title": "Bối cảnh",
+          "text": "Cli là project duy nhất biết cả 3 project còn lại (Core, Infrastructure, Agent). Agent không tham chiếu Infrastructure: nó chỉ nhận một IChatClient."
+        },
+        "legend": "xanh lá = bước chạy bình thường; đỏ = nhánh lỗi chưa được bắt",
+        "steps": [
+          {
+            "title": "1. Nạp cấu hình",
+            "text": "appsettings.json, appsettings.Local.json (gitignore), biến môi trường.",
+            "color": "green"
+          },
+          {
+            "title": "2. PostConfigure",
+            "text": "LLM_PROVIDER, LLM_MODEL, OLLAMA_ENDPOINT ghi đè mọi nguồn khác.",
+            "color": "green"
+          },
+          {
+            "title": "3. Factory tạo client",
+            "text": "IChatClient là Singleton, sinh bằng factory.CreateClient().",
+            "color": "green"
+          },
+          {
+            "title": "4. Agent bọc client",
+            "text": "ErpAgentService nhận IChatClient + ErpOptions, dựng AIAgent.",
+            "color": "green"
+          }
+        ],
+        "bad": {
+          "after": 3,
+          "title": "Provider sai thì sao?",
+          "text": "CreateClient ném InvalidOperationException ngay khi resolve agent (Program.cs:54), trước health check, không có try/catch."
+        },
+        "why": [
+          {
+            "title": "Vì sao dùng Factory",
+            "text": "Tách việc chọn provider khỏi Agent; test truyền client giả."
+          },
+          {
+            "title": "Vì sao Scoped cho agent",
+            "text": "Một instance = một hội thoại; giai đoạn web đăng ký Scoped hoặc Keyed, không Singleton."
+          }
+        ],
+        "names": "Tên trong code: LlmOptions, OllamaOptions, ErpOptions, IChatClientFactory, ChatClientFactory, IErpAgentService, ErpAgentService, CliCommandHandler, CliChatLoop"
+      },
+      "nodes": [
+        {
+          "key": "prog",
+          "title": "Program.cs — Composition Root",
+          "what": "Nạp cấu hình, PostConfigure từ biến môi trường, đăng ký DI, resolve các service, in banner, chạy vòng lặp.",
+          "why": "Một chỗ duy nhất biết lớp nào dùng lớp nào.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Cli/Program.cs",
+              "start": 18,
+              "end": 37
+            },
+            {
+              "file": "code/src/ErpChatbot.Cli/Program.cs",
+              "start": 41,
+              "end": 46
+            }
+          ]
+        },
+        {
+          "key": "opt",
+          "title": "LlmOptions / OllamaOptions / ErpOptions — Cấu hình có kiểu",
+          "what": "Giữ Provider, Model, Temperature, MaxOutputTokens, Endpoint, Access token và system prompt.",
+          "why": "Mọi giá trị đọc từ một chỗ; mặc định trong class bị appsettings.json ghi đè.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Core/Models/LlmOptions.cs",
+              "start": 3,
+              "end": 21
+            }
+          ]
+        },
+        {
+          "key": "fac",
+          "title": "ChatClientFactory — Nhà sản xuất IChatClient",
+          "what": "Chọn provider, dựng ChatClientBuilder với ConfigureOptions (điền Temperature, MaxOutputTokens khi chưa có).",
+          "why": "Đổi provider ở một chỗ; thêm provider mới không đụng Agent.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+              "start": 32,
+              "end": 51
+            }
+          ]
+        },
+        {
+          "key": "svc",
+          "title": "ErpAgentService — Bọc client thành AIAgent",
+          "what": "Nhận IChatClient + ErpOptions, gọi AsAIAgent(instructions, name).",
+          "why": "System prompt đi vào agent một lần; các lượt sau chỉ gửi prompt người dùng.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+              "start": 16,
+              "end": 25
+            }
+          ]
+        },
+        {
+          "key": "loop",
+          "title": "CliChatLoop — Vòng lặp hiển thị",
+          "what": "Nhận dòng nhập, hỏi handler, stream chữ ra màn hình, in thời gian và token.",
+          "why": "Không nằm trong DI; Program.cs tạo bằng new (dòng 71).",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 92,
+              "end": 101
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "prog",
+          "to": "opt",
+          "label": "Configure + PostConfigure"
+        },
+        {
+          "from": "opt",
+          "to": "fac",
+          "label": "IOptions<LlmOptions>"
+        },
+        {
+          "from": "fac",
+          "to": "svc",
+          "label": "IChatClient (Singleton)"
+        },
+        {
+          "from": "svc",
+          "to": "loop",
+          "label": "IErpAgentService (Scoped)"
+        }
+      ],
+      "sections": [
+        {
+          "title": "README so với code",
+          "note": "Hai giá trị mặc định trong README không còn đúng khi chạy qua appsettings.json.",
+          "boxes": [
+            {
+              "title": "README",
+              "text": "LLM_MODEL mặc định llama3.2; OLLAMA_ENDPOINT mặc định http://localhost:11434; 28 test.",
+              "color": "grey"
+            },
+            {
+              "title": "Code",
+              "text": "appsettings.json: llama3.2:3b và https://ollama.hungnguyen.online (dòng 4, 8). Class LlmOptions vẫn mặc định llama3.2 và localhost. Có 29 test.",
+              "color": "green"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "F1b Cấu hình và DI - Các bước kiểm tra",
+      "type": "decision",
+      "title": "F1b — Từ file cấu hình đến vòng lặp chat",
+      "subtitle": "Code @ 23cd011",
+      "nodes": [
+        {
+          "key": "load",
+          "label": "1. Nạp cấu hình",
+          "kind": "process",
+          "desc": "appsettings.json bắt buộc (optional: false); Local và biến môi trường thì không.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 18,
+            "end": 22
+          }
+        },
+        {
+          "key": "post",
+          "label": "2. Biến LLM_* ghi đè",
+          "kind": "process",
+          "desc": "PostConfigure chạy sau cùng nên thắng mọi nguồn khác.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 32,
+            "end": 37
+          }
+        },
+        {
+          "key": "res",
+          "label": "3. Resolve IErpAgentService",
+          "kind": "process",
+          "desc": "DI cần IChatClient nên gọi factory.CreateClient() tại đây, trước banner và health check.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 54,
+            "end": 54
+          }
+        },
+        {
+          "key": "prov",
+          "label": "4. Provider là 'ollama'?",
+          "kind": "decision",
+          "desc": "So sánh sau ToLowerInvariant().",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 39,
+            "end": 41
+          }
+        },
+        {
+          "key": "rej",
+          "label": "Từ chối: InvalidOperationException",
+          "kind": "reject",
+          "desc": "\"LLM_PROVIDER không hợp lệ: '...'. Ngày 1 chỉ hỗ trợ 'ollama'.\" Program.cs không có try/catch nên app sập; chưa có test cho đường này.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 48,
+            "end": 49
+          }
+        },
+        {
+          "key": "ok",
+          "label": "5. Banner, health check, vòng lặp chat",
+          "kind": "success",
+          "desc": "Health check chỉ in kết quả (xanh hoặc vàng), không chặn ứng dụng.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 58,
+            "end": 68
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "load",
+          "to": "post"
+        },
+        {
+          "from": "post",
+          "to": "res"
+        },
+        {
+          "from": "res",
+          "to": "prov"
+        },
+        {
+          "from": "prov",
+          "to": "rej",
+          "label": "Không",
+          "style": "dashed"
+        },
+        {
+          "from": "prov",
+          "to": "ok",
+          "label": "Có"
+        }
+      ]
+    },
+    {
+      "name": "F2a Health check - Kiến trúc",
+      "type": "architecture",
+      "subtitle": "Code @ 23cd011",
+      "problem": "Model có thể chưa nạp, tên model sai, endpoint sai hoặc Ollama treo. Không kiểm tra thì người dùng chỉ thấy lỗi ở câu hỏi đầu tiên. Health check gửi một câu ping ngắn trước khi vào vòng lặp.",
+      "heading": "F2a — Health check: thành phần, xử lý và code",
+      "summary": {
+        "title": "Flow 2 trong 1 phút: hỏi Ollama còn sống không",
+        "context": {
+          "title": "Bối cảnh",
+          "text": "Chạy một lần lúc khởi động, tối đa 30 giây (mô hình lớn có thể đang nạp). Kết quả chỉ để in, không chặn chat."
+        },
+        "legend": "xanh lá = thành công; đỏ = mỗi loại lỗi có thông báo riêng",
+        "steps": [
+          {
+            "title": "1. Tạo client riêng",
+            "text": "CheckHealthAsync gọi CreateClient() và dispose sau khi dùng; không dùng chung Singleton.",
+            "color": "green"
+          },
+          {
+            "title": "2. Gửi ping",
+            "text": "MaxOutputTokens = 1 để tốn ít nhất; xác thực cả endpoint và model.",
+            "color": "green"
+          },
+          {
+            "title": "3. In kết quả",
+            "text": "PrintHealth: xanh khi khoẻ, vàng kèm gợi ý khi không.",
+            "color": "green"
+          }
+        ],
+        "bad": {
+          "after": 2,
+          "title": "Lỗi thì sao?",
+          "text": "4 loại lỗi trả (false, thông báo): timeout, thiếu model, không kết nối, lỗi khác. Xem trang F2b."
+        },
+        "why": [
+          {
+            "title": "Vì sao client riêng",
+            "text": "Dispose client kiểm tra mà không ảnh hưởng client dùng để chat."
+          },
+          {
+            "title": "Vì sao 30 giây",
+            "text": "Commit d2b0dd6 nâng từ 5 giây vì model nạp lạnh quá lâu."
+          }
+        ],
+        "names": "Tên trong code: CheckHealthAsync, _timeoutMs, CreateOllamaClient, CF-Access-Client-Id, CF-Access-Client-Secret, PrintHealth"
+      },
+      "nodes": [
+        {
+          "key": "prog",
+          "title": "Program.cs — Gọi health check",
+          "what": "In dòng chờ, gọi factory.CheckHealthAsync(), rồi PrintHealth: xanh \"[SẴN SÀNG]\" khi khoẻ, vàng \"[CẢNH BÁO KẾT NỐI]\" khi không.",
+          "why": "Người dùng biết ngay vấn đề kết nối trước khi gõ.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Cli/Program.cs",
+              "start": 66,
+              "end": 68
+            },
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 103,
+              "end": 108
+            }
+          ]
+        },
+        {
+          "key": "chk",
+          "title": "ChatClientFactory.CheckHealthAsync",
+          "what": "CTS timeout nối với token ngoài; gửi ChatMessage 'ping'; map từng loại exception sang thông báo.",
+          "why": "Lỗi nào cũng thành (false, thông báo) thay vì ném ra ngoài.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+              "start": 67,
+              "end": 99
+            }
+          ]
+        },
+        {
+          "key": "mk",
+          "title": "CreateOllamaClient — Có hoặc không có Cloudflare Access",
+          "what": "Thiếu AccessClientId hoặc AccessClientSecret thì gọi thẳng; đủ cả hai thì gắn header CF-Access-Client-Id và CF-Access-Client-Secret.",
+          "why": "Cùng một code chạy local và qua tunnel có Access.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+              "start": 53,
+              "end": 65
+            }
+          ]
+        },
+        {
+          "key": "ext",
+          "title": "Ollama (qua Cloudflare Access nếu có)",
+          "kind": "db"
+        }
+      ],
+      "edges": [
+        {
+          "from": "prog",
+          "to": "chk",
+          "label": "CheckHealthAsync()"
+        },
+        {
+          "from": "chk",
+          "to": "mk",
+          "label": "CreateClient()"
+        },
+        {
+          "from": "mk",
+          "to": "ext",
+          "label": "GetResponseAsync(ping)"
+        }
+      ]
+    },
+    {
+      "name": "F2b Health check - Các bước kiểm tra",
+      "type": "decision",
+      "title": "F2b — Các kết quả của CheckHealthAsync",
+      "subtitle": "Code @ 23cd011",
+      "nodes": [
+        {
+          "key": "ping",
+          "label": "1. Gửi 'ping' (MaxOutputTokens = 1) trong 30s",
+          "kind": "process",
+          "desc": "Timeout 30s lấy từ constructor mặc định; test truyền timeout ngắn.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 69,
+            "end": 79
+          }
+        },
+        {
+          "key": "ok",
+          "label": "Khoẻ: (true, 'Ollama và model đã sẵn sàng kết nối.')",
+          "kind": "success",
+          "desc": "PrintHealth in màu xanh.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 80,
+            "end": 80
+          }
+        },
+        {
+          "key": "d1",
+          "label": "2. Hết giờ timeout?",
+          "kind": "decision",
+          "desc": "OperationCanceledException và timeoutCts.IsCancellationRequested.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 82,
+            "end": 82
+          }
+        },
+        {
+          "key": "r1",
+          "label": "Báo: không phản hồi sau 30s",
+          "kind": "reject",
+          "desc": "\"Không phản hồi sau 30s. Vui lòng kiểm tra xem Ollama có bị treo không.\"",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 84,
+            "end": 84
+          }
+        },
+        {
+          "key": "d2",
+          "label": "3. OllamaException có 'model' và 'not found'?",
+          "kind": "decision",
+          "desc": "404 chung của endpoint sai không khớp điều kiện này; nó rơi xuống HttpRequestException.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 86,
+            "end": 88
+          }
+        },
+        {
+          "key": "r2",
+          "label": "Báo: model không tìm thấy",
+          "kind": "reject",
+          "desc": "\"Model '...' không tìm thấy trên Ollama. Vui lòng chạy lệnh: 'ollama pull ...'.\"",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 90,
+            "end": 90
+          }
+        },
+        {
+          "key": "d3",
+          "label": "4. HttpRequestException?",
+          "kind": "decision",
+          "desc": "Endpoint không tới được hoặc trả 404 chung.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 92,
+            "end": 92
+          }
+        },
+        {
+          "key": "o",
+          "label": "5. Mọi exception còn lại",
+          "kind": "process",
+          "desc": "Catch cuối cùng, sau khi 4 điều kiện trên đều không khớp.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 96,
+            "end": 96
+          }
+        },
+        {
+          "key": "r3",
+          "label": "Báo: không thể kết nối tới Ollama",
+          "kind": "reject",
+          "desc": "\"Không thể kết nối tới Ollama tại '<endpoint>'. ... Vui lòng bật Ollama: 'ollama serve'.\"",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 94,
+            "end": 94
+          }
+        },
+        {
+          "key": "r4",
+          "label": "Báo: lỗi kiểm tra kết nối LLM",
+          "kind": "reject",
+          "desc": "\"Lỗi kiểm tra kết nối LLM: <message>\" cho mọi exception còn lại.",
+          "code": {
+            "file": "code/src/ErpChatbot.Infrastructure/Factories/ChatClientFactory.cs",
+            "start": 96,
+            "end": 98
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "ping",
+          "to": "ok",
+          "label": "Trả về bình thường"
+        },
+        {
+          "from": "ping",
+          "to": "d1",
+          "label": "Có exception"
+        },
+        {
+          "from": "d1",
+          "to": "r1",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d1",
+          "to": "d2",
+          "label": "Không"
+        },
+        {
+          "from": "d2",
+          "to": "r2",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d2",
+          "to": "d3",
+          "label": "Không"
+        },
+        {
+          "from": "d3",
+          "to": "r3",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d3",
+          "to": "o",
+          "label": "Không"
+        },
+        {
+          "from": "o",
+          "to": "r4"
+        }
+      ]
+    },
+    {
+      "name": "F3a Một lượt chat - Kiến trúc",
+      "type": "architecture",
+      "subtitle": "Code @ 23cd011",
+      "problem": "Người dùng muốn thấy chữ hiện dần, bot phải nhớ các lượt trước, và mỗi lượt phải đếm token. Ba việc này tách thành ba tầng: CliChatLoop (hiển thị), ErpAgentService (stream và đếm), AgentSession của MAF (nhớ lịch sử).",
+      "heading": "F3a — Một lượt chat: thành phần, xử lý và code",
+      "summary": {
+        "title": "Flow 3 trong 1 phút: từ Enter đến dòng thống kê token",
+        "context": {
+          "title": "Bối cảnh",
+          "text": "Mỗi lượt đi qua 3 tầng. Chỉ ErpAgentService biết MAF; CliChatLoop chỉ nhận IAsyncEnumerable<string>."
+        },
+        "legend": "xanh lá = đường bình thường; đỏ = lượt bị hủy hoặc lỗi giữa chừng",
+        "steps": [
+          {
+            "title": "1. Phân loại input",
+            "text": "CliCommandHandler trả SendToLlm cho dòng không bắt đầu bằng '/'.",
+            "color": "green"
+          },
+          {
+            "title": "2. Mở stream",
+            "text": "Lượt đầu tạo AgentSession; sau đó dùng lại session đó.",
+            "color": "green"
+          },
+          {
+            "title": "3. Đọc từng update",
+            "text": "Có text thì yield; có UsageContent thì cộng token lượt này.",
+            "color": "green"
+          },
+          {
+            "title": "4. Ghi thống kê",
+            "text": "RecordTurn sau khi stream xong; CliChatLoop in thời gian và token.",
+            "color": "green"
+          }
+        ],
+        "bad": {
+          "after": 3,
+          "title": "Hủy hoặc lỗi giữa stream?",
+          "text": "RecordTurn không chạy nên lượt đó không vào /stats; token lượt này in ra là 0. Session vẫn giữ."
+        },
+        "why": [
+          {
+            "title": "Vì sao trừ tổng token",
+            "text": "CliChatLoop không đọc token từ stream; nó lấy tổng trước lượt rồi trừ (CliRunner.cs:132, 143)."
+          },
+          {
+            "title": "Vì sao stream",
+            "text": "Người dùng thấy câu trả lời ngay khi có chữ đầu tiên."
+          }
+        ],
+        "names": "Tên trong code: CliInputResult.SendToLlm, AgentSession, AgentResponseUpdate, UsageContent, SessionStats.RecordTurn"
+      },
+      "nodes": [
+        {
+          "key": "loop",
+          "title": "CliChatLoop.ProcessLineAsync — Điều phối một dòng",
+          "what": "Hỏi handler; nếu SendToLlm thì in 'Trợ lý: ', bấm giờ, await foreach in từng chunk, rồi in dòng thống kê.",
+          "why": "Hiển thị nằm ngoài service nên service dễ test bằng fake.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 112,
+              "end": 145
+            }
+          ]
+        },
+        {
+          "key": "hd",
+          "title": "CliCommandHandler.HandleInputAsync — Phân loại input",
+          "what": "Rỗng thì Ignored; /exit thì Exit; lệnh '/' thì Handled; còn lại SendToLlm.",
+          "why": "Lệnh điều khiển không tốn lượt gọi model.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 37,
+              "end": 49
+            },
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 82,
+              "end": 88
+            }
+          ]
+        },
+        {
+          "key": "svc",
+          "title": "ErpAgentService.RunStreamingAsync — Stream và đếm token",
+          "what": "Tạo session lượt đầu, mở stream của AIAgent, yield text, cộng token từ UsageContent, cuối cùng gọi SessionStats.RecordTurn (Core/Models/SessionStats.cs:10-15).",
+          "why": "Một chỗ giữ cả session lẫn thống kê.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+              "start": 36,
+              "end": 46
+            },
+            {
+              "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+              "start": 66,
+              "end": 87
+            }
+          ]
+        },
+        {
+          "key": "llm",
+          "title": "AIAgent + Ollama IChatClient",
+          "kind": "db"
+        }
+      ],
+      "edges": [
+        {
+          "from": "loop",
+          "to": "hd",
+          "label": "HandleInputAsync(rawInput)"
+        },
+        {
+          "from": "hd",
+          "to": "svc",
+          "label": "SendToLlm: loop gọi RunStreamingAsync"
+        },
+        {
+          "from": "svc",
+          "to": "llm",
+          "label": "RunStreamingAsync(prompt, _session)"
+        }
+      ],
+      "sections": [
+        {
+          "title": "Rủi ro trong flow này",
+          "note": "Đọc từ code, chưa chạy thật với Ollama.",
+          "boxes": [
+            {
+              "title": "Thống kê mất khi hủy",
+              "text": "RecordTurn nằm sau vòng lặp (ErpAgentService.cs:87). Ctrl+C hoặc lỗi giữa stream không tính lượt và token vào /stats.",
+              "color": "orange"
+            },
+            {
+              "title": "catch { throw; } dư",
+              "text": "ErpAgentService.cs:59-64 chỉ throw lại, có hay không cũng giống nhau. Session được giữ vì không có dòng nào gán lại _session.",
+              "color": "yellow"
+            },
+            {
+              "title": "Chưa xác minh",
+              "text": "Việc AgentSession của MAF có giữ câu trả lời dở sau khi hủy hay không; logic nằm trong thư viện, repo không có code.",
+              "color": "grey"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "F3b Một lượt chat - Các bước kiểm tra",
+      "type": "decision",
+      "title": "F3b — Các cổng kiểm tra trước khi gọi model",
+      "subtitle": "Code @ 23cd011",
+      "nodes": [
+        {
+          "key": "in",
+          "label": "1. ProcessLineAsync nhận một dòng",
+          "kind": "process",
+          "desc": "Gọi HandleInputAsync(rawInput) rồi xét kết quả.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 112,
+            "end": 116
+          }
+        },
+        {
+          "key": "d1",
+          "label": "2. Dòng rỗng hoặc toàn khoảng trắng?",
+          "kind": "decision",
+          "desc": "Trim() rồi IsNullOrEmpty.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 39,
+            "end": 43
+          }
+        },
+        {
+          "key": "r1",
+          "label": "Bỏ qua: CliInputResult.Ignored",
+          "kind": "reject",
+          "desc": "Không gọi model; vòng lặp hiện lại 'Bạn:'.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 42,
+            "end": 42
+          }
+        },
+        {
+          "key": "d2",
+          "label": "3. Là /exit hoặc /quit?",
+          "kind": "decision",
+          "desc": "So sánh OrdinalIgnoreCase.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 45,
+            "end": 49
+          }
+        },
+        {
+          "key": "r2",
+          "label": "Thoát: in 'Tạm biệt!', return false",
+          "kind": "reject",
+          "desc": "Program.cs break khỏi vòng lặp.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 117,
+            "end": 121
+          }
+        },
+        {
+          "key": "d3",
+          "label": "4. Là lệnh '/'?",
+          "kind": "decision",
+          "desc": "/reset, /stats, /info, /help xử lý tại chỗ; mọi dòng '/' khác in cảnh báo.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 51,
+            "end": 86
+          }
+        },
+        {
+          "key": "r3",
+          "label": "Xử lý tại chỗ: CliInputResult.Handled",
+          "kind": "reject",
+          "desc": "Không gọi model; ProcessLineAsync return true.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 122,
+            "end": 125
+          }
+        },
+        {
+          "key": "s1",
+          "label": "5. Gửi prompt cho agent",
+          "kind": "process",
+          "desc": "Lượt đầu tạo AgentSession; sau đó dùng lại.",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 36,
+            "end": 43
+          }
+        },
+        {
+          "key": "s2",
+          "label": "6. Đọc stream: yield text, cộng token",
+          "kind": "process",
+          "desc": "Text không rỗng thì yield; UsageContent cộng input và output token.",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 66,
+            "end": 83
+          }
+        },
+        {
+          "key": "ok",
+          "label": "7. RecordTurn và in dòng thống kê",
+          "kind": "success",
+          "desc": "Token lượt này = tổng mới trừ tổng trước lượt.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+              "start": 87,
+              "end": 87
+            },
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 141,
+              "end": 145
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "in",
+          "to": "d1"
+        },
+        {
+          "from": "d1",
+          "to": "r1",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d1",
+          "to": "d2",
+          "label": "Không"
+        },
+        {
+          "from": "d2",
+          "to": "r2",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d2",
+          "to": "d3",
+          "label": "Không"
+        },
+        {
+          "from": "d3",
+          "to": "r3",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d3",
+          "to": "s1",
+          "label": "Không (SendToLlm)"
+        },
+        {
+          "from": "s1",
+          "to": "s2"
+        },
+        {
+          "from": "s2",
+          "to": "ok",
+          "label": "Stream xong"
+        }
+      ]
+    },
+    {
+      "name": "F4 Lệnh và vòng đời session - Swimlane",
+      "type": "swimlane",
+      "title": "F4 — Lệnh /reset, /stats và vòng đời session",
+      "subtitle": "Code @ 23cd011",
+      "subtitle_text": "/reset xoá ngữ cảnh nhưng giữ thống kê. Session chỉ đổi ở hai chỗ: lượt đầu (tạo) và /reset (tạo lại).",
+      "lanes": [
+        {
+          "key": "cli",
+          "title": "CliCommandHandler",
+          "sub": "Cli",
+          "color": "blue"
+        },
+        {
+          "key": "svc",
+          "title": "ErpAgentService",
+          "sub": "Agent",
+          "color": "green"
+        },
+        {
+          "key": "core",
+          "title": "SessionStats",
+          "sub": "Core",
+          "color": "purple"
+        }
+      ],
+      "steps": [
+        {
+          "key": "a1",
+          "lane": "cli",
+          "row": 0,
+          "title": "1. Nhận '/reset'",
+          "text": "Gọi ResetSessionAsync rồi in thông báo xoá lịch sử.",
+          "color": "blue",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 51,
+            "end": 56
+          }
+        },
+        {
+          "key": "a2",
+          "lane": "svc",
+          "row": 1,
+          "title": "2. Tạo session mới",
+          "text": "_session = CreateSessionAsync(); không đụng _stats.",
+          "color": "green",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 90,
+            "end": 95
+          }
+        },
+        {
+          "key": "b1",
+          "lane": "cli",
+          "row": 2,
+          "title": "3. Nhận '/stats'",
+          "text": "Lấy SessionStats từ service rồi in lượt và token.",
+          "color": "blue",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 58,
+            "end": 67
+          }
+        },
+        {
+          "key": "b2",
+          "lane": "svc",
+          "row": 3,
+          "title": "4. GetStats()",
+          "text": "Trả đúng đối tượng _stats đang giữ.",
+          "color": "green",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 97,
+            "end": 97
+          }
+        },
+        {
+          "key": "b3",
+          "lane": "core",
+          "row": 4,
+          "title": "5. Đọc TotalTokens",
+          "text": "TotalTokens = TotalInputTokens + TotalOutputTokens.",
+          "color": "purple",
+          "code": {
+            "file": "code/src/ErpChatbot.Core/Models/SessionStats.cs",
+            "start": 3,
+            "end": 8
+          }
+        },
+        {
+          "key": "c1",
+          "lane": "svc",
+          "row": 5,
+          "title": "6. Lượt đầu: tạo session",
+          "text": "_session ??= CreateSessionAsync(); các lượt sau dùng lại.",
+          "color": "green",
+          "code": {
+            "file": "code/src/ErpChatbot.Agent/Services/ErpAgentService.cs",
+            "start": 36,
+            "end": 37
+          }
+        },
+        {
+          "key": "c2",
+          "lane": "core",
+          "row": 6,
+          "title": "7. RecordTurn",
+          "text": "TurnCount tăng 1; cộng token vào và ra, kể cả khi token bằng 0.",
+          "color": "purple",
+          "code": {
+            "file": "code/src/ErpChatbot.Core/Models/SessionStats.cs",
+            "start": 10,
+            "end": 15
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "a1",
+          "to": "a2",
+          "label": "ResetSessionAsync"
+        },
+        {
+          "from": "b1",
+          "to": "b2",
+          "label": "GetStats"
+        },
+        {
+          "from": "b2",
+          "to": "b3"
+        },
+        {
+          "from": "c1",
+          "to": "c2",
+          "label": "sau khi stream xong"
+        }
+      ]
+    },
+    {
+      "name": "F5 Hủy lượt và xử lý lỗi - Các bước kiểm tra",
+      "type": "decision",
+      "title": "F5 — Ctrl+C và ba tầng catch",
+      "subtitle": "Code @ 23cd011",
+      "nodes": [
+        {
+          "key": "cc",
+          "label": "1. Ctrl+C trong lúc xử lý lượt",
+          "kind": "process",
+          "desc": "Handler đặt e.Cancel = true (không tắt app) rồi turnCts.Cancel(). Handler chỉ gắn sau ReadLine và gỡ khi lượt xong, nên Ctrl+C ở dấu nhắc 'Bạn:' vẫn thoát process (chưa chạy thật).",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/Program.cs",
+            "start": 81,
+            "end": 96
+          }
+        },
+        {
+          "key": "d1",
+          "label": "2. OperationCanceledException và token người dùng đã hủy?",
+          "kind": "decision",
+          "desc": "Điều kiện when (userCancellation.IsCancellationRequested).",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 147,
+            "end": 147
+          }
+        },
+        {
+          "key": "r1",
+          "label": "Hủy: '(đã hủy phản hồi)' (vàng)",
+          "kind": "reject",
+          "desc": "Không phải lỗi; session giữ nguyên. Sau đó return true: vòng lặp tiếp tục, _session giữ nguyên.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 147,
+            "end": 150
+          }
+        },
+        {
+          "key": "d2",
+          "label": "3. HttpRequestException, TimeoutException hoặc OperationCanceledException?",
+          "kind": "decision",
+          "desc": "OperationCanceledException tới đây là timeout của HttpClient, không phải người dùng hủy.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 151,
+            "end": 153
+          }
+        },
+        {
+          "key": "r2",
+          "label": "Báo: mất kết nối tới Ollama (đỏ)",
+          "kind": "reject",
+          "desc": "\"[Mất kết nối tới Ollama: <message>. Thử lại hoặc gõ /reset]\" Sau đó return true: vòng lặp tiếp tục, _session giữ nguyên.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 154,
+            "end": 154
+          }
+        },
+        {
+          "key": "o",
+          "label": "4. Mọi exception còn lại",
+          "kind": "process",
+          "desc": "Catch cuối cùng (Exception ex), không có điều kiện when.",
+          "code": {
+            "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+            "start": 156,
+            "end": 156
+          }
+        },
+        {
+          "key": "r3",
+          "label": "Báo: lỗi xử lý (đỏ)",
+          "kind": "reject",
+          "desc": "\"[Lỗi xử lý: <message>]\" cho mọi exception còn lại. Sau đó return true: vòng lặp tiếp tục, _session giữ nguyên.",
+          "code": [
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 157,
+              "end": 159
+            },
+            {
+              "file": "code/src/ErpChatbot.Cli/CliRunner.cs",
+              "start": 161,
+              "end": 161
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "cc",
+          "to": "d1"
+        },
+        {
+          "from": "d1",
+          "to": "r1",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d1",
+          "to": "d2",
+          "label": "Không"
+        },
+        {
+          "from": "d2",
+          "to": "r2",
+          "label": "Có",
+          "style": "dashed"
+        },
+        {
+          "from": "d2",
+          "to": "o",
+          "label": "Không"
+        },
+        {
+          "from": "o",
+          "to": "r3"
+        }
+      ]
+    }
+  ]
+}

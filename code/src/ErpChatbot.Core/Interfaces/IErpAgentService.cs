@@ -14,7 +14,11 @@ namespace ErpChatbot.Core.Interfaces;
 /// </summary>
 public interface IErpAgentService
 {
-    IAsyncEnumerable<string> RunStreamingAsync(string userPrompt, CancellationToken cancellationToken = default);
+    IAsyncEnumerable<AgentResponseEvent> RunStreamingAsync(
+        string userPrompt,
+        Func<AgentApprovalRequiredEvent, Task<bool>>? approvalHandler = null,
+        CancellationToken cancellationToken = default);
+
     Task ResetSessionAsync();
     SessionStats GetStats();
 }

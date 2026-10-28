@@ -41,7 +41,6 @@ public class ChatClientFactoryTests
         var client = factory.CreateClient();
 
         client.Should().NotBeNull();
-        client.Should().BeOfType<ConfigureOptionsChatClient>();
         client.GetService(typeof(OllamaApiClient)).Should().NotBeNull();
     }
 

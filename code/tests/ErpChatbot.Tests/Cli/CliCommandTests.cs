@@ -16,12 +16,13 @@ public class CliCommandTests
         public int PromptCalls { get; private set; }
         public SessionStats Stats { get; } = new();
 
-        public async IAsyncEnumerable<string> RunStreamingAsync(
+        public async IAsyncEnumerable<AgentResponseEvent> RunStreamingAsync(
             string userPrompt,
+            Func<AgentApprovalRequiredEvent, Task<bool>>? approvalHandler = null,
             [EnumeratorCancellation] CancellationToken cancellationToken = default)
         {
             PromptCalls++;
-            yield return "Phản hồi";
+            yield return new AgentTextChunkEvent("Phản hồi");
             await Task.Yield();
         }
 

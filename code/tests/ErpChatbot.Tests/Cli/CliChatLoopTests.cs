@@ -10,11 +10,14 @@ namespace ErpChatbot.Tests.Cli;
 [Collection("Console")]
 public class CliChatLoopTests
 {
-    private class ScriptedAgentService(Func<CancellationToken, IAsyncEnumerable<string>> script) : IErpAgentService
+    private class ScriptedAgentService(Func<CancellationToken, IAsyncEnumerable<AgentResponseEvent>> script) : IErpAgentService
     {
         public int ResetCalls { get; private set; }
 
-        public IAsyncEnumerable<string> RunStreamingAsync(string userPrompt, CancellationToken cancellationToken = default)
+        public IAsyncEnumerable<AgentResponseEvent> RunStreamingAsync(
+            string userPrompt,
+            Func<AgentApprovalRequiredEvent, Task<bool>>? approvalHandler = null,
+            CancellationToken cancellationToken = default)
             => script(cancellationToken);
 
         public Task ResetSessionAsync() { ResetCalls++; return Task.CompletedTask; }
@@ -39,9 +42,9 @@ public class CliChatLoopTests
         }
     }
 
-    private static async IAsyncEnumerable<string> ChunkThen(Exception error)
+    private static async IAsyncEnumerable<AgentResponseEvent> ChunkThen(Exception error)
     {
-        yield return "Đang trả lời";
+        yield return new AgentTextChunkEvent("Đang trả lời");
         await Task.Yield();
         throw error;
     }
@@ -75,9 +78,9 @@ public class CliChatLoopTests
         using var userCts = new CancellationTokenSource();
         var service = new ScriptedAgentService(Script);
 
-        async IAsyncEnumerable<string> Script([EnumeratorCancellation] CancellationToken ct)
+        async IAsyncEnumerable<AgentResponseEvent> Script([EnumeratorCancellation] CancellationToken ct)
         {
-            yield return "Đang trả lời";
+            yield return new AgentTextChunkEvent("Đang trả lời");
             userCts.Cancel();
             await Task.Delay(Timeout.Infinite, ct);
         }

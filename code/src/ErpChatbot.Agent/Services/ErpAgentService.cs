@@ -1,4 +1,7 @@
+using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using ErpChatbot.Agent.Security;
+using ErpChatbot.Agent.Tools;
 using ErpChatbot.Core.Interfaces;
 using ErpChatbot.Core.Models;
 using Microsoft.Agents.AI;
@@ -13,19 +16,40 @@ public class ErpAgentService : IErpAgentService
     private readonly SessionStats _stats = new();
     private AgentSession? _session;
 
-    public ErpAgentService(IChatClient chatClient, IOptions<ErpOptions> erpOptions)
+    public ErpAgentService(
+        IChatClient chatClient,
+        IErpDataService erpDataService,
+        IUserContext userContext,
+        IOptions<ErpOptions> erpOptions)
     {
         var options = erpOptions.Value;
+        var tools = ErpTools.GetTools(erpDataService);
 
-        // Bọc IChatClient thành AIAgent của Microsoft Agent Framework
         _agent = chatClient.AsAIAgent(
             instructions: options.Instructions,
-            name: options.AssistantName
+            name: options.AssistantName,
+            tools: tools
         );
     }
 
-    public async IAsyncEnumerable<string> RunStreamingAsync(
+    public static bool EvaluateRequiresApproval(string toolName, IReadOnlyDictionary<string, object?>? arguments)
+    {
+        if (toolName.Equals("create_purchase_request", StringComparison.OrdinalIgnoreCase))
+        {
+            if (arguments != null && arguments.TryGetValue("quantity", out var qtyObj))
+            {
+                if (int.TryParse(qtyObj?.ToString(), out int qty))
+                {
+                    return qty > 50;
+                }
+            }
+        }
+        return true;
+    }
+
+    public async IAsyncEnumerable<AgentResponseEvent> RunStreamingAsync(
         string userPrompt,
+        Func<AgentApprovalRequiredEvent, Task<bool>>? approvalHandler = null,
         [EnumeratorCancellation] CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(userPrompt))
@@ -33,65 +57,96 @@ public class ErpAgentService : IErpAgentService
             yield break;
         }
 
-        // Tự khởi tạo session nếu là lượt đầu tiên
         _session ??= await _agent.CreateSessionAsync(cancellationToken);
 
         long turnInputTokens = 0;
         long turnOutputTokens = 0;
+        var turnSw = Stopwatch.StartNew();
 
-        // Gọi RunStreamingAsync của AIAgent. Trả về IAsyncEnumerable<AgentResponseUpdate>
-        var responseStream = _agent.RunStreamingAsync(userPrompt, _session, options: null, cancellationToken: cancellationToken);
-
-        await using var enumerator = responseStream.GetAsyncEnumerator(cancellationToken);
+        object currentInput = userPrompt;
 
         while (true)
         {
-            AgentResponseUpdate update;
-            try
+            cancellationToken.ThrowIfCancellationRequested();
+            var responseStream = currentInput switch
             {
-                cancellationToken.ThrowIfCancellationRequested();
-                if (!await enumerator.MoveNextAsync())
+                string text => _agent.RunStreamingAsync(text, _session, options: null, cancellationToken: cancellationToken),
+                ChatMessage chatMsg => _agent.RunStreamingAsync([chatMsg], _session, options: null, cancellationToken: cancellationToken),
+                _ => throw new InvalidOperationException($"Input type không được hỗ trợ: {currentInput.GetType()}")
+            };
+
+            List<ToolApprovalRequestContent> pendingApprovalRequests = [];
+
+            await foreach (var update in responseStream.WithCancellation(cancellationToken))
+            {
+                if (!string.IsNullOrEmpty(update.Text))
                 {
-                    break;
+                    yield return new AgentTextChunkEvent(update.Text);
                 }
-                update = enumerator.Current;
-            }
-            catch
-            {
-                // Khi xảy ra Exception hoặc CancelKeyPress giữa chừng:
-                // KHÔNG reset _session! Để nguyên session để người dùng không bị mất ngữ cảnh đã trao đổi trước đó.
-                throw;
-            }
 
-            // Trích xuất text để stream ra UI
-            if (!string.IsNullOrEmpty(update.Text))
-            {
-                yield return update.Text;
-            }
-
-            // Trích xuất số token qua UsageContent trong Contents
-            if (update.Contents != null)
-            {
-                foreach (var content in update.Contents)
+                if (update.Contents != null)
                 {
-                    if (content is UsageContent usageContent && usageContent.Details != null)
+                    foreach (var content in update.Contents)
                     {
-                        turnInputTokens += usageContent.Details.InputTokenCount ?? 0;
-                        turnOutputTokens += usageContent.Details.OutputTokenCount ?? 0;
+                        if (content is UsageContent usageContent && usageContent.Details != null)
+                        {
+                            turnInputTokens += usageContent.Details.InputTokenCount ?? 0;
+                            turnOutputTokens += usageContent.Details.OutputTokenCount ?? 0;
+                        }
+                        else if (content is ToolApprovalRequestContent approvalReq)
+                        {
+                            pendingApprovalRequests.Add(approvalReq);
+                        }
                     }
                 }
             }
+
+            if (pendingApprovalRequests.Count == 0)
+            {
+                break;
+            }
+
+            // Xử lý các yêu cầu phê duyệt
+            List<AIContent> approvalResponses = [];
+            foreach (var req in pendingApprovalRequests)
+            {
+                var toolCall = req.ToolCall as FunctionCallContent;
+                string toolName = toolCall?.Name ?? "unknown_tool";
+                var argsDict = toolCall?.Arguments?.ToDictionary(k => k.Key, v => (object?)v.Value) 
+                               ?? new Dictionary<string, object?>();
+
+                bool requiresApproval = EvaluateRequiresApproval(toolName, argsDict);
+                bool approved;
+
+                if (!requiresApproval)
+                {
+                    // Tự động duyệt vì số lượng <= 50
+                    approved = true;
+                    yield return new AgentToolExecutionEvent(toolName, "Tự động phê duyệt (số lượng <= 50)", 0, true);
+                }
+                else
+                {
+                    // Cần người dùng phê duyệt
+                    var approvalEvent = new AgentApprovalRequiredEvent(toolName, argsDict, $"Yêu cầu phê duyệt thực thi '{toolName}'");
+                    yield return approvalEvent;
+
+                    approved = approvalHandler != null && await approvalHandler(approvalEvent);
+                }
+
+                approvalResponses.Add(req.CreateResponse(approved));
+            }
+
+            currentInput = new ChatMessage(ChatRole.User, approvalResponses);
         }
 
-        // Cập nhật thống kê token sau khi stream hoàn tất trọn vẹn
+        turnSw.Stop();
         _stats.RecordTurn(turnInputTokens, turnOutputTokens);
+        yield return new AgentTurnCompletedEvent(turnInputTokens, turnOutputTokens, turnSw.ElapsedMilliseconds);
     }
 
     public async Task ResetSessionAsync()
     {
-        // Tạo một session mới hoàn toàn, dọn dẹp ngữ cảnh cũ
         _session = await _agent.CreateSessionAsync();
-        // LƯU Ý: Không reset _stats vì stats thống kê toàn bộ phiên làm việc của người dùng
     }
 
     public SessionStats GetStats() => _stats;

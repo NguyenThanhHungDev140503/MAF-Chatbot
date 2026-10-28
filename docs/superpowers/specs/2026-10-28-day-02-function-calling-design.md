@@ -24,17 +24,22 @@ Trong Ngày 1, Chatbot ERP chỉ giao tiếp và trả lời *"Tôi chưa có d�
 ### 1.2. Mục tiêu kiến trúc
 1. **Bảo tồn Clean Architecture**:
    - `ErpChatbot.Core`: Chứa abstractions, models, event definitions, DTOs, interfaces. Không phụ thuộc thư viện AI bên ngoài (trừ `Microsoft.Extensions.AI.Abstractions`).
-   - `ErpChatbot.Infrastructure`: Triển khai `IErpDataService` (`InMemoryErpDataService`) và `IChatClientFactory`.
-   - `ErpChatbot.Agent`: Đóng gói `AIAgent`, định nghĩa các `AIFunction`, quản lý vòng đời hội thoại và điều phối event stream. **Agent hoàn toàn không phụ thuộc Infrastructure**.
+   - `ErpChatbot.Infrastructure`: Triển khai `IErpDataService` (`InMemoryErpDataService`) và `IChatClientFactory` (tạo client cơ sở và health check ping). Hoàn toàn không phụ thuộc nghiệp vụ Agent hay `IUserContext`.
+   - `ErpChatbot.Agent`: Đóng gói `AIAgent`, cấu hình middleware `UseFunctionInvocation`, invoker `RbacFunctionInvoker`, định nghĩa các `AIFunction`, quản lý vòng đời hội thoại và điều phối event stream. **Agent hoàn toàn không phụ thuộc Infrastructure**.
    - `ErpChatbot.Cli`: Composition Root kết nối toàn bộ hệ thống qua Dependency Injection, hiển thị console stream và xử lý tương tác duyệt người dùng.
 2. **Event-Driven Streaming**:
-   - `IErpAgentService.RunStreamingAsync` phát ra luồng sự kiện `AgentResponseEvent` (`AgentTextChunkEvent`, `AgentToolExecutionEvent`, `AgentApprovalRequiredEvent`, `AgentTurnCompletedEvent`). Sẵn sàng 100% cho Web API / SignalR / SSE ở Giai đoạn 4.
-3. **An toàn & Bảo mật**:
-   - Chặn lặp vô hạn (tối đa 5 vòng lặp).
-   - Ẩn lỗi nội bộ (`IncludeDetailedErrors = false`), tránh lộ schema/SQL ra mô hình.
-   - RBAC chuẩn: Phân quyền theo Granular Permission (`Resource:Action`).
-4. **Kiểm thử độc lập**:
-   - Bộ unit tests với Fake `IChatClient` và in-memory data, kiểm thử 100% các nhánh RBAC, Conditional Approval, và Streaming Events mà không cần Ollama thật.
+   - `IErpAgentService.RunStreamingAsync` phát ra luồng sự kiện `AgentResponseEvent` (`AgentTextChunkEvent`, `AgentToolExecutionEvent`, `AgentApprovalRequiredEvent`, `AgentTurnCompletedEvent`) thông qua hàng đợi sự kiện an toàn luồng (`ConcurrentQueue`). Sẵn sàng 100% cho Web API / SignalR / SSE ở Giai đoạn 4.
+3. **An toàn & Bảo mật (Fail-Secure & Defense-in-Depth)**:
+   - Chặn lặp vô hạn (tối đa 5 vòng lặp: `MaximumIterationsPerRequest = 5`).
+   - Chặn ngắt lỗi liên tiếp (`MaximumConsecutiveErrorsPerRequest = 2`), ẩn lỗi nội bộ (`IncludeDetailedErrors = false`).
+   - **Fail-Secure (Default Deny)**: Bất kỳ tool nào chưa đăng ký quyền hạn trong `ToolPermissions` đều bị từ chối mặc định.
+   - **Xử lý lỗi có cấu trúc**: Trả về object lỗi có cấu trúc (`error = "PermissionDenied"`) thay vì ném exception gây crash stream hay bị che giấu bởi `IncludeDetailedErrors`.
+   - **Kiểm tra quyền trước khi xin duyệt**: Người dùng thiếu quyền `PurchaseRequest:Create` sẽ bị từ chối ngay lập tức, tuyệt đối không bị hiển thị prompt hỏi duyệt trên giao diện.
+   - **Kiểm soát ngưỡng & chặn đầu vào**: Validate số lượng `quantity > 0` và giới hạn ngưỡng tích luỹ mua hàng cộng dồn trong một lượt (turn) để ngăn chặn việc lách ngưỡng bằng nhiều cuộc gọi nhỏ.
+   - **Cô lập phiên hội thoại**: Lệnh `/user` bắt buộc làm mới session (`ResetSessionAsync()`) để ngăn lộ dữ liệu nhạy cảm (công nợ) qua lịch sử chat.
+4. **Kiểm thử độc lập & Xác thực thực tế**:
+   - Bộ unit tests với Fake `IChatClient` và in-memory data, kiểm thử toàn diện các nhánh RBAC, Conditional Approval, Fail-Secure, và Streaming Events mà không cần Ollama.
+   - Kèm kịch bản smoke test thủ công trên Ollama thật (`llama3.2:3b`) để xác nhận độ tin cậy tương tác tool thật.
 
 ---
 
@@ -72,14 +77,13 @@ graph TD
     CLI --> IN_MEMORY_ERP
     CLI --> CLI_HANDLER
 
-    AGENT_SVC --> I_AGENT
+    AGENT_SVC -.->|implements| I_AGENT
     AGENT_SVC --> TOOLS
+    AGENT_SVC --> INVOKER
     TOOLS --> I_DATA
-    TOOLS --> I_USER
     INVOKER --> I_USER
 
-    IN_MEMORY_ERP --> I_DATA
-    CHAT_FACTORY --> I_USER
+    IN_MEMORY_ERP -.->|implements| I_DATA
     AGENT_SVC --> EVENTS
 ```
 
@@ -110,7 +114,7 @@ public static class ErpPermissions
 #### Roles & Users:
 - **`Role`**:
   - `Sales`: Có quyền `Inventory:Read`, `Orders:Read`, `PurchaseRequest:Create`. *(Không có quyền `Debt:Read`)*.
-  - `Accountant`: Có quyền `Debt:Read`, `Inventory:Read`, `Orders:Read`.
+  - `Accountant`: Có quyền `Debt:Read`, `Inventory:Read`, `Orders:Read`. *(Không có quyền `PurchaseRequest:Create`)*.
   - `Admin`: Sở hữu toàn bộ quyền hạn.
 - **`User`**:
   - `Id`, `Username`, `FullName`, `IReadOnlyList<Role> Roles`, `IReadOnlySet<string> EffectivePermissions`.
@@ -164,18 +168,20 @@ public interface IErpDataService
   - `KH-001`: Công ty TNHH Ánh Dương (45.000.000 VND, Hạn: 2026-11-15)
   - `KH-002`: Đại lý Hoàng Gia (120.500.000 VND, Quá hạn: 2026-10-30)
   - `KH-003`: Doanh nghiệp Song Toàn (0 VND)
-- Đề xuất mua hàng: Sinh mã ngẫu nhiên `PR-xxxx`, trạng thái *"Chờ phê duyệt của trưởng phòng mua hàng"*.
+- Đề xuất mua hàng: Validate `quantity > 0` (ngăn chặn số âm/bằng 0). Sinh mã ngẫu nhiên `PR-xxxx`, trạng thái *"Chờ phê duyệt của trưởng phòng mua hàng"*.
 
 ---
 
 ### 3.3. Định nghĩa Tools trong MAF (`ErpChatbot.Agent/Tools/ErpTools.cs`)
 
-Định nghĩa 5 tools rõ ràng, có `[Description]` chi tiết và tên tường minh:
+Định nghĩa 5 tools rõ ràng, có `[Description]` chi tiết và hỗ trợ lọc danh sách theo quyền của người dùng hiện tại (Defense-in-Depth):
 1. `get_stock(productCode)`: Tra cứu số lượng tồn kho sản phẩm (Quyền: `Inventory:Read`).
 2. `get_order_status(orderCode)`: Tra cứu trạng thái đơn bán hàng (Quyền: `Orders:Read`).
 3. `list_low_stock(threshold)`: Liệt kê các sản phẩm có tồn kho thấp hơn ngưỡng (Quyền: `Inventory:Read`).
 4. `get_customer_debt(customerCode)`: Tra cứu công nợ khách hàng (Quyền: `Debt:Read`).
-5. `create_purchase_request(productCode, quantity)`: Tạo đề xuất mua hàng (Quyền: `PurchaseRequestCreate`, bọc bằng `ApprovalRequiredAIFunction`).
+5. `create_purchase_request(productCode, quantity)`: Tạo đề xuất mua hàng (Quyền: `PurchaseRequest:Create`, bọc bằng `ApprovalRequiredAIFunction`).
+
+Hàm `ErpTools.GetTools(erpDataService, userContext)` cho phép lọc chỉ trả về các tools mà `userContext.CurrentUser` có quyền thực thi.
 
 ---
 
@@ -214,7 +220,7 @@ sequenceDiagram
     actor User as Người dùng CLI
     participant Service as ErpAgentService
     participant Agent as AIAgent (MAF)
-    participant Invoker as FunctionInvoker (RBAC)
+    participant Invoker as RbacFunctionInvoker
     participant Erp as InMemoryErpDataService
 
     User->>Service: RunStreamingAsync(prompt, approvalHandler)
@@ -222,34 +228,50 @@ sequenceDiagram
     
     alt Tool đọc (get_stock / get_order_status / get_customer_debt)
         Agent->>Invoker: Gọi tool qua middleware
-        Invoker->>Invoker: Kiểm tra IUserContext.HasPermission
-        alt Thiếu quyền (sales tra nợ)
-            Invoker-->>Agent: Ném UnauthorizedAccessException
-            Agent-->>Service: Stream giải thích không có quyền
+        Invoker->>Invoker: Kiểm tra quyền (Fail-Secure)
+        alt Thiếu quyền hoặc tool lạ
+            Invoker-->>Agent: Trả structured error { error = "PermissionDenied", message = "..." }
+            Agent-->>Service: Stream câu trả lời giải thích không có quyền
         else Đủ quyền
             Invoker->>Erp: Thực thi truy vấn
             Erp-->>Invoker: Trả kết quả DTO
-            Invoker-->>Agent: Trả JSON kết quả
+            Invoker-->>Agent: Trả kết quả
             Agent-->>Service: Stream câu trả lời chứa số liệu thật
         end
     else Tool ghi (create_purchase_request)
         Agent-->>Service: Phát hiện ToolApprovalRequestContent
-        alt Số lượng <= 50 (Tự động duyệt)
-            Service->>Service: request.CreateResponse(true)
-            Service->>Agent: RunStreamingAsync([resumeMessage], session)
-            Agent->>Invoker: Gọi hàm ghi vào ERP
-            Invoker->>Erp: Tạo phiếu PR-xxxx
-            Erp-->>Invoker: PurchaseRequestResult
-            Agent-->>Service: Stream câu trả lời tạo thành công
-        else Số lượng > 50 (Cần duyệt)
-            Service->>User: approvalHandler(AgentApprovalRequiredEvent)
-            User-->>Service: Phản hồi duyệt (y/n)
-            Service->>Agent: RunStreamingAsync([CreateResponse(ok)], session)
-            alt ok = true
-                Agent->>Invoker: Gọi hàm ghi vào ERP
-                Agent-->>Service: Stream thông báo đã tạo đề xuất
-            else ok = false
-                Agent-->>Service: Stream thông báo đề xuất bị từ chối
+        Note over Service: BƯỚC 1: Kiểm tra quyền RBAC trước!
+        alt User THIẾU quyền PurchaseRequest:Create
+            Service->>Service: Tự động từ chối (approved = false) - KHÔNG hỏi user!
+            Service->>Agent: Gửi ToolApprovalResponseContent(approved: false)
+            Agent-->>Service: Stream thông báo người dùng không có quyền
+        else User CÓ quyền PurchaseRequest:Create
+            Note over Service: BƯỚC 2: Kiểm tra tính hợp lệ & Ngưỡng duyệt
+            alt quantity <= 0 (Không hợp lệ)
+                Service->>Service: approved = false
+                Service->>Agent: Gửi ToolApprovalResponseContent(approved: false)
+            else quantity > 0 && cumulativeTurnQuantity + quantity <= 50 (Tự động duyệt)
+                Service->>Service: approved = true, cộng dồn turn quantity
+                Service->>Agent: Gửi ToolApprovalResponseContent(approved: true)
+                Agent->>Invoker: Thực thi ghi vào ERP
+                Invoker->>Erp: Tạo phiếu PR-xxxx
+                Erp-->>Invoker: PurchaseRequestResult
+                Agent-->>Service: Stream câu trả lời tạo thành công
+            else cumulativeTurnQuantity + quantity > 50 (Cần duyệt)
+                alt approvalHandler == null
+                    Service->>Service: approved = false (Mặc định từ chối an toàn)
+                else approvalHandler != null
+                    Service->>User: approvalHandler(AgentApprovalRequiredEvent)
+                    User-->>Service: Phản hồi duyệt (y/n)
+                end
+                Service->>Agent: Gửi ToolApprovalResponseContent(approved)
+                alt approved = true
+                    Service->>Service: cộng dồn turn quantity
+                    Agent->>Invoker: Thực thi ghi vào ERP
+                    Agent-->>Service: Stream thông báo đã tạo đề xuất
+                else approved = false
+                    Agent-->>Service: Stream thông báo đề xuất bị từ chối
+                end
             end
         end
     end
@@ -258,51 +280,33 @@ sequenceDiagram
 
 ---
 
-### 3.6. Cấu hình Middleware An toàn (`ChatClientFactory.cs`)
+### 3.6. Cấu hình Middleware An toàn & Invoker (`ErpAgentService.cs`)
+
+Trong tầng `ErpChatbot.Agent`, client được bọc bởi `UseFunctionInvocation` trước khi tạo `AIAgent`:
+
 ```csharp
-new ChatClientBuilder(innerClient)
+var clientWithFunctions = new ChatClientBuilder(rawChatClient)
     .UseFunctionInvocation(configure: f =>
     {
         f.MaximumIterationsPerRequest = 5;          // Chặn loop vô hạn
         f.MaximumConsecutiveErrorsPerRequest = 2;   // Ngắt nếu lỗi liên tiếp 2 lần
-        f.IncludeDetailedErrors = false;            // Ẩn lỗi SQL/stack trace
+        f.IncludeDetailedErrors = false;            // Ẩn lỗi nhạy cảm
         f.AllowConcurrentInvocation = false;        // Chạy tuần tự
 
-        f.FunctionInvoker = async (ctx, ct) =>
-        {
-            var sw = Stopwatch.StartNew();
-            // 1. Kiểm tra quyền hạn RBAC
-            string toolName = ctx.Function.Name;
-            string requiredPermission = GetRequiredPermission(toolName);
-            if (!_userContext.HasPermission(requiredPermission))
-            {
-                throw new UnauthorizedAccessException(
-                    $"Tài khoản '{_userContext.CurrentUser.Username}' (vai trò: {string.Join(", ", _userContext.CurrentUser.Roles.Select(r => r.Name))}) " +
-                    $"không có quyền '{requiredPermission}' để thực thi tool '{toolName}'.");
-            }
-
-            // 2. Thực thi hàm
-            try
-            {
-                var result = await ctx.Function.InvokeAsync(ctx.Arguments, ct);
-                sw.Stop();
-                return result;
-            }
-            catch (Exception ex)
-            {
-                sw.Stop();
-                throw;
-            }
-        };
+        f.FunctionInvoker = RbacFunctionInvoker.CreateInvoker(userContext, evt => _eventQueue.Enqueue(evt));
     })
     .Build();
 ```
+
+Trong `RbacFunctionInvoker.cs`:
+1. **Fail-Secure (Default Deny)**: Nếu tool không có trong `ToolPermissions`, từ chối ngay lập tức.
+2. **Structured Error Return**: Khi từ chối, trả về `{ error = "PermissionDenied", message = "..." }` thay vì throw exception, giúp LLM nhận và giải thích rõ ràng cho người dùng mà không bị ngắt stream bởi `MaximumConsecutiveErrorsPerRequest`.
 
 ---
 
 ### 3.7. Trải nghiệm & Lệnh CLI (`ErpChatbot.Cli`)
 - **Lệnh điều khiển phiên**:
-  - `/user <username>`: Chuyển đổi giữa `sales_user`, `accountant_user`, `admin_user`.
+  - `/user <username>`: Chuyển đổi giữa `sales_user`, `accountant_user`, `admin_user`. **Bắt buộc tự động gọi `ResetSessionAsync()`** để dọn sạch lịch sử phiên, bảo mật tuyệt đối dữ liệu giữa các người dùng.
   - `/whoami`: Hiển thị thông tin người dùng đang đăng nhập, các Role và Permissions.
   - `/reset`: Bắt đầu phiên hội thoại mới, dọn sạch session nhưng bảo lưu tổng token.
   - `/stats`: Hiển thị số lượt chat và token sử dụng.
@@ -313,7 +317,7 @@ new ChatClientBuilder(innerClient)
   ```
      [cần duyệt] create_purchase_request(productCode=SP-003, quantity=100). Đồng ý? (y/n): 
   ```
-  Nhập `y` / `Y` -> duyệt; bất kỳ ký tự nào khác -> từ chối an toàn.
+  Nhập `y` / `Y` -> duyệt; bất kỳ ký tự nào khác (hoặc Enter) -> từ chối an toàn.
 
 ---
 
@@ -323,14 +327,14 @@ Toàn bộ test suites sử dụng xUnit, FluentAssertions, và Fake `IChatClien
 
 | Test Suite | File Kiểm thử | Trọng tâm kiểm thử |
 |---|---|---|
-| **Core RBAC** | `Tests/Core/UserContextTests.cs` | - Kiểm tra danh sách permissions của `Sales`, `Accountant`, `Admin`.<br/>- Kiểm tra hàm `SwitchUser` và `HasPermission`. |
+| **Core RBAC** | `Tests/Core/UserContextTests.cs` | - Quyền hạn của `Sales`, `Accountant`, `Admin`.<br/>- Hàm `SwitchUser` và `HasPermission`. |
 | **Core DTOs** | `Tests/Core/ErpDataModelsTests.cs` | - Khởi tạo và tính toàn vẹn của DTOs và Event records. |
-| **Infrastructure ERP** | `Tests/Infrastructure/InMemoryErpDataServiceTests.cs` | - Tra tồn kho SP-001 (124 cái), lỗi SP-999.<br/>- Tra đơn DH-1001.<br/>- Lọc hàng sắp hết threshold = 10.<br/>- Tra công nợ KH-001, KH-002.<br/>- Tạo PR-xxxx thành công. |
-| **Agent Tools** | `Tests/Agent/ErpToolsTests.cs` | - Metadata của 5 tools (Name, Description, Parameters schema).<br/>- Tool ghi được bọc bởi `ApprovalRequiredAIFunction`. |
-| **RBAC Security** | `Tests/Agent/RbacFunctionInvokerTests.cs` | - `sales_user` gọi `get_customer_debt` -> ném `UnauthorizedAccessException`.<br/>- `accountant_user` gọi `get_customer_debt` -> thành công. |
-| **Conditional Approval** | `Tests/Agent/ConditionalApprovalTests.cs` | - Quantity <= 50 -> Tự động duyệt.<br/>- Quantity > 50 -> Phát sinh event hỏi duyệt. |
-| **Agent Service Streaming** | `Tests/Agent/ErpAgentServiceTests.cs` | - Phát các event chunk và event hoàn tất lượt.<br/>- `ResetSessionAsync` không làm mất `SessionStats`. |
-| **CLI Commands** | `Tests/Cli/CliCommandHandlerTests.cs` | - `/user`, `/whoami`, `/reset`, `/stats`, `/info`. |
+| **Infrastructure ERP** | `Tests/Infrastructure/InMemoryErpDataServiceTests.cs` | - Tra tồn kho SP-001, lỗi SP-999.<br/>- Tra đơn DH-1001.<br/>- Lọc hàng sắp hết threshold = 10.<br/>- Tra công nợ KH-001, KH-002.<br/>- Tạo PR-xxxx thành công; throw lỗi khi quantity <= 0. |
+| **Agent Tools** | `Tests/Agent/ErpToolsTests.cs` | - Metadata của 5 tools (Name, Description, Parameters).<br/>- Tool ghi được bọc bởi `ApprovalRequiredAIFunction`.<br/>- Lọc danh sách tools theo quyền người dùng. |
+| **RBAC Security** | `Tests/Agent/RbacFunctionInvokerTests.cs` | - Fail-Secure: Tool không đăng ký bị từ chối.<br/>- Thiếu quyền: Trả structured error thay vì crash.<br/>- Đủ quyền: Thực thi thành công và ghi log sự kiện. |
+| **Conditional Approval** | `Tests/Agent/ConditionalApprovalTests.cs` | - `quantity <= 0` -> Không auto-duyệt.<br/>- `quantity > 0 && <= 50` -> Tự động duyệt.<br/>- `quantity > 50` -> Yêu cầu người dùng duyệt.<br/>- Tích luỹ nhiều lần gọi trong một lượt vượt ngưỡng 50 -> Yêu cầu duyệt.<br/>- User thiếu quyền `PurchaseRequest:Create` -> Bị từ chối ngay, không phát sinh event hỏi duyệt. |
+| **Agent Service Streaming** | `Tests/Agent/ErpAgentServiceTests.cs` | - Phát các event chunk và event hoàn tất lượt.<br/>- Stream các `AgentToolExecutionEvent` từ hàng đợi ra stream.<br/>- `ResetSessionAsync` không làm mất `SessionStats`.<br/>- `approvalHandler == null` mặc định từ chối. |
+| **CLI Commands** | `Tests/Cli/CliCommandHandlerTests.cs` | - `/user` tự động gọi reset session.<br/>- `/whoami`, `/reset`, `/stats`, `/info`. |
 
 ---
 

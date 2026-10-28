@@ -71,6 +71,11 @@ public class InMemoryErpDataService : IErpDataService
 
     public Task<PurchaseRequestResult> CreatePurchaseRequestAsync(string productCode, int quantity, CancellationToken ct = default)
     {
+        if (quantity <= 0)
+        {
+            throw new ArgumentOutOfRangeException(nameof(quantity), "Số lượng đề xuất mua hàng phải là số nguyên dương (> 0).");
+        }
+
         string id = $"PR-{Random.Shared.Next(1000, 9999)}";
         var result = new PurchaseRequestResult(id, productCode.Trim().ToUpperInvariant(), quantity, "Chờ phê duyệt của trưởng phòng mua hàng");
         _purchaseRequests.Add(result);

@@ -8,7 +8,7 @@ namespace ErpChatbot.Tests.Agent;
 public class RbacFunctionInvokerTests
 {
     [Fact]
-    public async Task Invoker_WhenSalesCallsCustomerDebt_ThrowsUnauthorizedAccessException()
+    public async Task Invoker_WhenSalesCallsCustomerDebt_ReturnsStructuredPermissionDeniedError()
     {
         var userContext = new UserContext("sales_user");
         var invoker = RbacFunctionInvoker.CreateInvoker(userContext);
@@ -16,9 +16,27 @@ public class RbacFunctionInvokerTests
         var func = AIFunctionFactory.Create(() => "debt info", name: "get_customer_debt");
         var ctx = new FunctionInvocationContext { Function = func, Arguments = new AIFunctionArguments() };
 
-        var act = async () => await invoker(ctx, CancellationToken.None);
-        await act.Should().ThrowAsync<UnauthorizedAccessException>()
-            .WithMessage("*sales_user*không có quyền*Debt:Read*");
+        var result = await invoker(ctx, CancellationToken.None);
+        result.Should().BeOfType<ToolSecurityError>();
+        var err = (ToolSecurityError)result!;
+        err.Error.Should().Be("PermissionDenied");
+        err.Message.Should().Contain("sales_user").And.Contain("Debt:Read");
+    }
+
+    [Fact]
+    public async Task Invoker_WhenCallingUnregisteredTool_ReturnsFailSecureError()
+    {
+        var userContext = new UserContext("admin_user");
+        var invoker = RbacFunctionInvoker.CreateInvoker(userContext);
+
+        var func = AIFunctionFactory.Create(() => "unregistered", name: "delete_database");
+        var ctx = new FunctionInvocationContext { Function = func, Arguments = new AIFunctionArguments() };
+
+        var result = await invoker(ctx, CancellationToken.None);
+        result.Should().BeOfType<ToolSecurityError>();
+        var err = (ToolSecurityError)result!;
+        err.Error.Should().Be("PermissionDenied");
+        err.Message.Should().Contain("Default Deny / Fail-Secure");
     }
 
     [Fact]

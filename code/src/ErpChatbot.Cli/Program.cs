@@ -41,13 +41,7 @@ builder.Services.PostConfigure<LlmOptions>(opts =>
 // COMPOSITION ROOT
 builder.Services.AddSingleton<IUserContext>(new UserContext(envUser));
 builder.Services.AddSingleton<IErpDataService, InMemoryErpDataService>();
-builder.Services.AddSingleton<IChatClientFactory>(sp =>
-{
-    var opts = sp.GetRequiredService<IOptions<LlmOptions>>();
-    var userContext = sp.GetRequiredService<IUserContext>();
-    var invoker = RbacFunctionInvoker.CreateInvoker(userContext);
-    return new ChatClientFactory(opts, invoker);
-});
+builder.Services.AddSingleton<IChatClientFactory, ChatClientFactory>();
 builder.Services.AddSingleton(sp => sp.GetRequiredService<IChatClientFactory>().CreateClient());
 
 builder.Services.AddScoped<IErpAgentService, ErpAgentService>();

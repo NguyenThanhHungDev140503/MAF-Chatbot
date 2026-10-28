@@ -69,4 +69,15 @@ public class InMemoryErpDataServiceTests
         pr.Quantity.Should().Be(25);
         pr.Status.Should().Contain("Chờ phê duyệt");
     }
+
+    [Theory]
+    [InlineData(0)]
+    [InlineData(-5)]
+    [InlineData(-100)]
+    public async Task CreatePurchaseRequestAsync_NegativeOrZeroQuantity_ThrowsArgumentOutOfRangeException(int invalidQty)
+    {
+        var act = async () => await _service.CreatePurchaseRequestAsync("SP-003", invalidQty);
+        await act.Should().ThrowAsync<ArgumentOutOfRangeException>()
+            .WithMessage("*Số lượng đề xuất mua hàng phải là số nguyên dương*");
+    }
 }

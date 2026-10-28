@@ -104,11 +104,13 @@ public class CliCommandHandler
             try
             {
                 _userContext.SwitchUser(targetUser);
+                await _agentService.ResetSessionAsync();
                 var u = _userContext.CurrentUser;
                 Console.ForegroundColor = ConsoleColor.Green;
                 Console.WriteLine($"\n[NGƯỜI DÙNG] Đã chuyển sang tài khoản: {u.Username} ({u.FullName})");
                 Console.WriteLine($"  Vai trò: {string.Join(", ", u.Roles.Select(r => r.Name))}");
-                Console.WriteLine($"  Quyền hạn: {string.Join(", ", u.EffectivePermissions)}\n");
+                Console.WriteLine($"  Quyền hạn: {string.Join(", ", u.EffectivePermissions)}");
+                Console.WriteLine("  (Đã tự động làm mới phiên hội thoại để bảo mật dữ liệu giữa các người dùng)\n");
                 Console.ResetColor();
             }
             catch (Exception ex)

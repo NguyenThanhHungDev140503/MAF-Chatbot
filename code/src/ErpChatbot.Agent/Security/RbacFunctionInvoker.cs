@@ -6,6 +6,8 @@ using Microsoft.Extensions.AI;
 
 namespace ErpChatbot.Agent.Security;
 
+public record ToolSecurityError(string Error, string Message);
+
 public static class RbacFunctionInvoker
 {
     public static readonly IReadOnlyDictionary<string, string> ToolPermissions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
@@ -26,15 +28,23 @@ public static class RbacFunctionInvoker
             string toolName = ctx.Function.Name;
             var sw = Stopwatch.StartNew();
 
-            if (ToolPermissions.TryGetValue(toolName, out var requiredPermission))
+            // Fail-Secure: Từ chối mặc định nếu tool chưa đăng ký quyền hạn trong hệ thống
+            if (!ToolPermissions.TryGetValue(toolName, out var requiredPermission))
             {
-                if (!userContext.HasPermission(requiredPermission))
-                {
-                    string rolesStr = string.Join(", ", userContext.CurrentUser.Roles.Select(r => r.Name));
-                    string errorMsg = $"Người dùng '{userContext.CurrentUser.Username}' (vai trò: {rolesStr}) không có quyền '{requiredPermission}' để thực thi tool '{toolName}'.";
-                    onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, false, errorMsg));
-                    throw new UnauthorizedAccessException(errorMsg);
-                }
+                sw.Stop();
+                string errorMsg = $"Tool '{toolName}' chưa được đăng ký quyền hạn trong hệ thống (Default Deny / Fail-Secure).";
+                onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, false, errorMsg));
+                return new ToolSecurityError("PermissionDenied", errorMsg);
+            }
+
+            // Kiểm tra phân quyền NIST RBAC
+            if (!userContext.HasPermission(requiredPermission))
+            {
+                sw.Stop();
+                string rolesStr = string.Join(", ", userContext.CurrentUser.Roles.Select(r => r.Name));
+                string errorMsg = $"Người dùng '{userContext.CurrentUser.Username}' (vai trò: {rolesStr}) không có quyền '{requiredPermission}' để thực thi tool '{toolName}'.";
+                onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, false, errorMsg));
+                return new ToolSecurityError("PermissionDenied", errorMsg);
             }
 
             try

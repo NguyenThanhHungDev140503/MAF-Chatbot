@@ -36,7 +36,7 @@ public class CliCommandHandlerTests
     private readonly ErpOptions _erpOptions = new() { AssistantName = "Trợ lý ERP" };
 
     [Fact]
-    public async Task HandleInputAsync_UserCommand_SwitchesUser()
+    public async Task HandleInputAsync_UserCommand_SwitchesUser_AndResetsSession()
     {
         var handler = new CliCommandHandler(_agentService, _userContext, _llmOptions, _erpOptions);
 
@@ -44,6 +44,7 @@ public class CliCommandHandlerTests
 
         result.Should().Be(CliInputResult.Handled);
         _userContext.CurrentUser.Username.Should().Be("accountant_user");
+        _agentService.ResetCalled.Should().BeTrue();
     }
 
     [Fact]

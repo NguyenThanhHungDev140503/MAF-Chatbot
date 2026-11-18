@@ -7,6 +7,7 @@ using ErpChatbot.Core.Models;
 using ErpChatbot.Core.Models.Rbac;
 using Microsoft.Agents.AI;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 namespace ErpChatbot.Agent.Services;
@@ -17,7 +18,7 @@ public class ErpAgentService : IErpAgentService
     private readonly IErpDataService _erpDataService;
     private readonly IUserContext _userContext;
     private readonly ErpOptions _options;
-    private readonly System.Collections.Concurrent.ConcurrentQueue<AgentResponseEvent> _eventQueue = new();
+    private readonly ILogger<ErpAgentService>? _logger;
     private readonly SessionStats _stats = new();
 
     private AIAgent _agent;
@@ -27,12 +28,14 @@ public class ErpAgentService : IErpAgentService
         IChatClient chatClient,
         IErpDataService erpDataService,
         IUserContext userContext,
-        IOptions<ErpOptions> erpOptions)
+        IOptions<ErpOptions> erpOptions,
+        ILogger<ErpAgentService>? logger = null)
     {
         _baseChatClient = chatClient;
         _erpDataService = erpDataService;
         _userContext = userContext;
         _options = erpOptions.Value;
+        _logger = logger;
 
         _agent = BuildAgent();
     }
@@ -40,7 +43,7 @@ public class ErpAgentService : IErpAgentService
     private AIAgent BuildAgent()
     {
         var tools = ErpTools.GetTools(_erpDataService, _userContext);
-        var invoker = RbacFunctionInvoker.CreateInvoker(_userContext, evt => _eventQueue.Enqueue(evt));
+        var invoker = RbacFunctionInvoker.CreateInvoker(_userContext, _logger);
 
         var clientWithFunctions = new ChatClientBuilder(_baseChatClient)
             .UseFunctionInvocation(configure: f =>
@@ -60,7 +63,7 @@ public class ErpAgentService : IErpAgentService
         );
     }
 
-    public static bool EvaluateRequiresApproval(string toolName, IReadOnlyDictionary<string, object?>? arguments, int cumulativeTurnQty = 0)
+    public static bool EvaluateRequiresApproval(string toolName, IReadOnlyDictionary<string, object?>? arguments, int cumulativeTurnQty = 0, int threshold = ErpOptions.DefaultAutoApproveQuantityThreshold)
     {
         if (toolName.Equals("create_purchase_request", StringComparison.OrdinalIgnoreCase))
         {
@@ -69,7 +72,7 @@ public class ErpAgentService : IErpAgentService
                 if (int.TryParse(qtyObj?.ToString(), out int qty))
                 {
                     if (qty <= 0) return true; // Số lượng không hợp lệ không được auto-duyệt
-                    return (cumulativeTurnQty + qty) > 50;
+                    return (cumulativeTurnQty + qty) > threshold;
                 }
             }
         }
@@ -95,14 +98,14 @@ public class ErpAgentService : IErpAgentService
 
         object currentInput = userPrompt;
 
+        // Sống suốt cả lượt (kể cả các vòng duyệt): call ở stream này, result có thể tới ở stream sau.
+        var calls = new Dictionary<string, (string Name, string Args, long StartTs)>();
+        // Call bị từ chối ở bước duyệt: framework vẫn phát FunctionResultContent "rejected", không được báo là thực thi.
+        var skipResultCallIds = new HashSet<string>();
+
         while (true)
         {
             cancellationToken.ThrowIfCancellationRequested();
-
-            while (_eventQueue.TryDequeue(out var pendingEvt))
-            {
-                yield return pendingEvt;
-            }
 
             var responseStream = currentInput switch
             {
@@ -115,11 +118,6 @@ public class ErpAgentService : IErpAgentService
 
             await foreach (var update in responseStream.WithCancellation(cancellationToken))
             {
-                while (_eventQueue.TryDequeue(out var toolEvt))
-                {
-                    yield return toolEvt;
-                }
-
                 if (!string.IsNullOrEmpty(update.Text))
                 {
                     yield return new AgentTextChunkEvent(update.Text);
@@ -138,13 +136,23 @@ public class ErpAgentService : IErpAgentService
                         {
                             pendingApprovalRequests.Add(approvalReq);
                         }
+                        else if (content is FunctionCallContent fc)
+                        {
+                            calls[fc.CallId] = (fc.Name, SummarizeArgs(fc.Arguments), Stopwatch.GetTimestamp());
+                        }
+                        else if (content is FunctionResultContent fr && !skipResultCallIds.Remove(fr.CallId))
+                        {
+                            var hasCall = calls.TryGetValue(fr.CallId, out var call);
+                            // Tuyệt đối không dùng fr.Exception.Message / chuỗi Result của lỗi: có thể chứa SQL.
+                            yield return new AgentToolExecutionEvent(
+                                hasCall ? call.Name : "unknown_tool",
+                                hasCall ? call.Args : "",
+                                hasCall ? (long)Stopwatch.GetElapsedTime(call.StartTs).TotalMilliseconds : 0,
+                                fr.Exception == null && fr.Result is not ToolSecurityError,
+                                fr.Result is ToolSecurityError se ? se.Message : (fr.Exception != null ? RbacFunctionInvoker.ToolFailedMessage : null));
+                        }
                     }
                 }
-            }
-
-            while (_eventQueue.TryDequeue(out var toolEvt))
-            {
-                yield return toolEvt;
             }
 
             if (pendingApprovalRequests.Count == 0)
@@ -168,11 +176,13 @@ public class ErpAgentService : IErpAgentService
                 }
 
                 bool approved;
+                string? rejectReason = null;
 
                 // 1. Kiểm tra RBAC trước: nếu thiếu quyền, từ chối ngay lập tức, KHÔNG hỏi duyệt!
                 if (!_userContext.HasPermission(ErpPermissions.PurchaseRequestCreate))
                 {
                     approved = false;
+                    rejectReason = "Tài khoản hiện tại không có quyền tạo đề xuất mua hàng.";
                     yield return new AgentToolExecutionEvent(
                         toolName, 
                         $"productCode={argsDict.GetValueOrDefault("productCode")}, quantity={requestedQty}", 
@@ -184,6 +194,7 @@ public class ErpAgentService : IErpAgentService
                 else if (requestedQty <= 0)
                 {
                     approved = false;
+                    rejectReason = "Số lượng không hợp lệ (phải là số nguyên dương).";
                     yield return new AgentToolExecutionEvent(
                         toolName, 
                         $"productCode={argsDict.GetValueOrDefault("productCode")}, quantity={requestedQty}", 
@@ -193,17 +204,12 @@ public class ErpAgentService : IErpAgentService
                 }
                 else
                 {
-                    bool requiresApproval = EvaluateRequiresApproval(toolName, argsDict, turnCumulativePrQuantity);
+                    bool requiresApproval = EvaluateRequiresApproval(toolName, argsDict, turnCumulativePrQuantity, _options.AutoApproveQuantityThreshold);
                     if (!requiresApproval)
                     {
                         // Tự động duyệt vì số lượng > 0 và tổng cộng dồn trong lượt <= 50
                         approved = true;
                         turnCumulativePrQuantity += requestedQty;
-                        yield return new AgentToolExecutionEvent(
-                            toolName, 
-                            $"productCode={argsDict.GetValueOrDefault("productCode")}, quantity={requestedQty}", 
-                            0, 
-                            true);
                     }
                     else
                     {
@@ -220,24 +226,32 @@ public class ErpAgentService : IErpAgentService
                         {
                             turnCumulativePrQuantity += requestedQty;
                         }
+                        else
+                        {
+                            // Nói rõ ai từ chối để model 3B không bịa "trưởng phòng không duyệt".
+                            rejectReason = "Người dùng đã tự từ chối thao tác này. Không phải do trưởng phòng hay người khác.";
+                        }
                     }
                 }
 
-                approvalResponses.Add(req.CreateResponse(approved));
+                if (!approved && toolCall != null)
+                {
+                    skipResultCallIds.Add(toolCall.CallId);
+                }
+
+                approvalResponses.Add(req.CreateResponse(approved, rejectReason));
             }
 
             currentInput = new ChatMessage(ChatRole.User, approvalResponses);
-        }
-
-        while (_eventQueue.TryDequeue(out var finalEvt))
-        {
-            yield return finalEvt;
         }
 
         turnSw.Stop();
         _stats.RecordTurn(turnInputTokens, turnOutputTokens);
         yield return new AgentTurnCompletedEvent(turnInputTokens, turnOutputTokens, turnSw.ElapsedMilliseconds);
     }
+
+    private static string SummarizeArgs(IDictionary<string, object?>? args)
+        => args == null || args.Count == 0 ? "" : string.Join(", ", args.Select(a => $"{a.Key}={a.Value}"));
 
     public async Task ResetSessionAsync()
     {

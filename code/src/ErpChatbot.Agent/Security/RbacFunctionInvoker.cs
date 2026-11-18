@@ -1,8 +1,7 @@
-using System.Diagnostics;
 using ErpChatbot.Core.Interfaces;
-using ErpChatbot.Core.Models;
 using ErpChatbot.Core.Models.Rbac;
 using Microsoft.Extensions.AI;
+using Microsoft.Extensions.Logging;
 
 namespace ErpChatbot.Agent.Security;
 
@@ -10,6 +9,9 @@ public record ToolSecurityError(string Error, string Message);
 
 public static class RbacFunctionInvoker
 {
+    // Thông điệp an toàn đưa vào event; chi tiết exception (có thể chứa SQL) chỉ ghi log.
+    public const string ToolFailedMessage = "Tool gặp lỗi khi thực thi.";
+
     public static readonly IReadOnlyDictionary<string, string> ToolPermissions = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
     {
         ["get_stock"] = ErpPermissions.InventoryRead,
@@ -21,51 +23,36 @@ public static class RbacFunctionInvoker
 
     public static Func<FunctionInvocationContext, CancellationToken, ValueTask<object?>> CreateInvoker(
         IUserContext userContext,
-        Action<AgentToolExecutionEvent>? onExecuted = null)
+        ILogger? logger = null)
     {
         return async (ctx, ct) =>
         {
             string toolName = ctx.Function.Name;
-            var sw = Stopwatch.StartNew();
 
             // Fail-Secure: Từ chối mặc định nếu tool chưa đăng ký quyền hạn trong hệ thống
             if (!ToolPermissions.TryGetValue(toolName, out var requiredPermission))
             {
-                sw.Stop();
                 string errorMsg = $"Tool '{toolName}' chưa được đăng ký quyền hạn trong hệ thống (Default Deny / Fail-Secure).";
-                onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, false, errorMsg));
                 return new ToolSecurityError("PermissionDenied", errorMsg);
             }
 
             // Kiểm tra phân quyền NIST RBAC
             if (!userContext.HasPermission(requiredPermission))
             {
-                sw.Stop();
                 string rolesStr = string.Join(", ", userContext.CurrentUser.Roles.Select(r => r.Name));
                 string errorMsg = $"Người dùng '{userContext.CurrentUser.Username}' (vai trò: {rolesStr}) không có quyền '{requiredPermission}' để thực thi tool '{toolName}'.";
-                onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, false, errorMsg));
                 return new ToolSecurityError("PermissionDenied", errorMsg);
             }
 
             try
             {
-                var result = await ctx.Function.InvokeAsync(ctx.Arguments, ct);
-                sw.Stop();
-                onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, true));
-                return result;
+                return await ctx.Function.InvokeAsync(ctx.Arguments, ct);
             }
             catch (Exception ex)
             {
-                sw.Stop();
-                onExecuted?.Invoke(new AgentToolExecutionEvent(toolName, SummarizeArgs(ctx.Arguments), sw.ElapsedMilliseconds, false, ex.Message));
+                logger?.LogError(ex, "Tool {Tool} lỗi khi thực thi", toolName);
                 throw;
             }
         };
-    }
-
-    private static string SummarizeArgs(AIFunctionArguments? args)
-    {
-        if (args == null || args.Count == 0) return "";
-        return string.Join(", ", args.Select(a => $"{a.Key}={a.Value}"));
     }
 }

@@ -25,7 +25,13 @@ public class CoreModelsTests
 
         options.AssistantName.Should().Be("Trợ lý ERP");
         options.Instructions.Should().Contain("Bạn là 'Trợ lý ERP' của công ty");
-        options.Instructions.Should().Contain("không được bịa số");
+        options.Instructions.Should().Contain("không bao giờ tự bịa số").And.Contain("Luôn dùng tool");
+    }
+
+    [Fact]
+    public void ErpOptions_ShouldHaveDefaultAutoApproveQuantityThreshold_IsZero_AlwaysAsk()
+    {
+        new ErpOptions().AutoApproveQuantityThreshold.Should().Be(0);
     }
 
     [Fact]

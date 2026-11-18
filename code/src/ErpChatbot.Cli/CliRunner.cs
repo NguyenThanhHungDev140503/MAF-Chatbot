@@ -235,11 +235,13 @@ public class CliChatLoop
         }
         catch (Exception ex) when (ex is HttpRequestException or TimeoutException or OperationCanceledException)
         {
-            WriteLine(ConsoleColor.Red, $"\n[Mất kết nối tới Ollama: {ex.Message}. Thử lại hoặc gõ /reset]");
+            // Không in ex.Message: lỗi từ tool/ERP (ví dụ timeout mang SQL) có thể thoát ra theo đường này.
+            WriteLine(ConsoleColor.Red, "\n[Mất kết nối tới Ollama hoặc ERP. Thử lại hoặc gõ /reset]");
         }
-        catch (Exception ex)
+        catch (Exception)
         {
-            WriteLine(ConsoleColor.Red, $"\n[Lỗi xử lý: {ex.Message}]");
+            // Không in ex.Message: lỗi tool lặp quá giới hạn mang nguyên văn lỗi (có thể chứa SQL).
+            WriteLine(ConsoleColor.Red, "\n[Lỗi xử lý yêu cầu. Thử lại hoặc gõ /reset]");
         }
 
         return true;

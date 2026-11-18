@@ -2,6 +2,7 @@ using System.Runtime.CompilerServices;
 using ErpChatbot.Cli;
 using ErpChatbot.Core.Interfaces;
 using ErpChatbot.Core.Models;
+using ErpChatbot.Core.Models.Rbac;
 using FluentAssertions;
 using Xunit;
 
@@ -131,5 +132,32 @@ public class CliCommandTests
 
         result.Should().Be(CliInputResult.Ignored);
         service.PromptCalls.Should().Be(0);
+    }
+
+    [Theory]
+    [InlineData("/user", "[HƯỚNG DẪN]")]
+    [InlineData("/user ghost_user", "[LỖI]")]
+    public async Task TC31_UserCommand_InvalidOrMissingName_KeepsUserAndDoesNotReset(string input, string expectedOutput)
+    {
+        var service = new FakeAgentService();
+        var userContext = new UserContext("sales_user");
+        var handler = new CliCommandHandler(service, userContext, new LlmOptions(), new ErpOptions());
+
+        using var sw = new StringWriter();
+        var originalOut = Console.Out;
+        Console.SetOut(sw);
+        try
+        {
+            var result = await handler.HandleInputAsync(input, CancellationToken.None);
+            result.Should().Be(CliInputResult.Handled);
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        userContext.CurrentUser.Username.Should().Be("sales_user");
+        service.ResetCalls.Should().Be(0);
+        sw.ToString().Should().Contain(expectedOutput);
     }
 }

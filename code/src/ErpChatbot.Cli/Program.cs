@@ -10,12 +10,16 @@ using ErpChatbot.Infrastructure.Services;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 
 Console.OutputEncoding = Encoding.UTF8;
 Console.InputEncoding = Encoding.UTF8;
 
 var builder = Host.CreateApplicationBuilder(args);
+
+// shortcut: tắt log ra console (nó in stack trace lỗi tool vào cửa sổ chat), Ngày 4 thêm log file/server.
+builder.Logging.ClearProviders();
 
 builder.Configuration
     .SetBasePath(AppContext.BaseDirectory)

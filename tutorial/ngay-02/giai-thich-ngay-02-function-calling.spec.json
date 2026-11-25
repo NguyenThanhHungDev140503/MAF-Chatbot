@@ -1,0 +1,1049 @@
+{
+  "repo": "/home/nguyen-thanh-hung/Documents/MAF-Chatbot",
+  "pages": [
+    {
+      "name": "00 Tổng quan - Sequence Ex1",
+      "title": "00 Tổng quan: một câu hỏi tồn kho qua 2 lượt gọi mô hình (Ex1, vòng lặp thủ công)",
+      "subtitle": "Code @ 23cd011 (working tree)",
+      "type": "sequence",
+      "actors": [
+        {
+          "actor": true,
+          "key": "U",
+          "label": "Người dùng"
+        },
+        {
+          "key": "P",
+          "label": "Ex1 Program.cs"
+        },
+        {
+          "key": "M",
+          "label": "IChatClient\n(OllamaApiClient)"
+        },
+        {
+          "key": "F",
+          "label": "AIFunction\nget_stock"
+        },
+        {
+          "key": "G",
+          "label": "GetStock\n(hàm C#)"
+        }
+      ],
+      "steps": [
+        {
+          "from": "P",
+          "to": "F",
+          "label": "AIFunctionFactory.Create(GetStock, name: \"get_stock\")",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 16,
+            "end": 16
+          }
+        },
+        {
+          "from": "U",
+          "to": "P",
+          "label": "\"Mã SP-001 còn bao nhiêu trong kho?\"",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 20,
+            "end": 24
+          }
+        },
+        {
+          "from": "P",
+          "to": "M",
+          "label": "Lượt 1: GetResponseAsync(history, options{Tools})",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 27,
+            "end": 28
+          }
+        },
+        {
+          "from": "M",
+          "to": "P",
+          "label": "FunctionCallContent get_stock(productCode=SP-001), CallId",
+          "style": "return",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 31,
+            "end": 32
+          }
+        },
+        {
+          "from": "P",
+          "to": "F",
+          "label": "InvokeAsync(call.Arguments): CODE CỦA BẠN chạy hàm",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 39,
+            "end": 39
+          }
+        },
+        {
+          "from": "F",
+          "to": "G",
+          "label": "GetStock(\"SP-001\")",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 55,
+            "end": 58
+          }
+        },
+        {
+          "from": "G",
+          "to": "F",
+          "label": "StockInfo(SP-001, Bàn phím cơ K87, 124, cái, Kho Hà Nội)",
+          "style": "return",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 60,
+            "end": 60
+          }
+        },
+        {
+          "from": "F",
+          "to": "P",
+          "label": "result",
+          "style": "return",
+          "code": null
+        },
+        {
+          "from": "P",
+          "to": "M",
+          "label": "Lượt 2: history có thêm Tool/FunctionResultContent(CallId, result)",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex1/Program.cs",
+              "start": 40,
+              "end": 40
+            },
+            {
+              "file": "tutorial/ngay-02/Ex1/Program.cs",
+              "start": 44,
+              "end": 45
+            }
+          ]
+        },
+        {
+          "from": "M",
+          "to": "P",
+          "label": "Câu trả lời cuối bằng chữ (dựa trên số 124)",
+          "style": "return",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 46,
+            "end": 46
+          }
+        },
+        {
+          "from": "P",
+          "to": "U",
+          "label": "In lịch sử: system, user, assistant(Call), tool(Result), assistant(Text)",
+          "style": "return",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 49,
+            "end": 51
+          }
+        }
+      ]
+    },
+    {
+      "name": "F1a AIFunctionFactory - Kiến trúc",
+      "title": "F1a — Biến hàm C# thành tool: thành phần, xử lý và code",
+      "subtitle": "Code @ 23cd011 (working tree)",
+      "type": "architecture",
+      "problem": "Mô hình không chạy được code của bạn, nó chỉ biết tool nào có nhờ danh sách tên + mô tả + JSON schema gửi kèm mỗi request. Viết tay schema dễ sai, nên AIFunctionFactory đọc chữ ký hàm và [Description] để sinh ra.",
+      "heading": "F1a — Từ hàm C# đến danh sách tool gửi cho mô hình",
+      "summary": {
+        "title": "Flow 1 trong 1 phút: dán nhãn cho ngăn kéo để nhân viên mới biết mở ngăn nào",
+        "context": {
+          "title": "Trước khi có tool",
+          "text": "Ngày 1 bot chỉ nói \"tôi chưa có dữ liệu\". Muốn có số thật, phải cho mô hình biết có hàm nào và cách gọi, mà mô hình chỉ đọc được văn bản."
+        },
+        "legend": "Màu ô:  xanh lá = code của bạn   |   xanh dương = thư viện Microsoft.Extensions.AI   |   tím = mô hình",
+        "steps": [
+          {
+            "title": "1. Viết hàm + [Description]",
+            "text": "Mô tả hàm và từng tham số bằng tiếng người: đây là prompt mô hình đọc để chọn hàm.",
+            "color": "green"
+          },
+          {
+            "title": "2. AIFunctionFactory.Create",
+            "text": "Đọc chữ ký, sinh AIFunction gồm Name, Description, JsonSchema. Phải truyền name: tường minh.",
+            "color": "blue"
+          },
+          {
+            "title": "3. Đưa vào ChatOptions.Tools",
+            "text": "Mỗi request gửi kèm danh sách tool cho mô hình.",
+            "color": "blue"
+          },
+          {
+            "title": "4. Mô hình chọn tool",
+            "text": "Đọc mô tả + schema, trả FunctionCallContent nếu cần số liệu.",
+            "color": "purple"
+          }
+        ],
+        "bad": {
+          "after": 1,
+          "title": "Quên truyền name:?",
+          "text": "Hàm local trong top-level statements bị đổi tên kiểu _Main_g_GetStock_0_1; mô hình vẫn gọi được nhưng dễ chọn sai khi có nhiều tool."
+        },
+        "why": [
+          {
+            "title": "Không tự viết schema",
+            "text": "Schema sinh từ chữ ký hàm nên không lệch với code thật.",
+            "color": "blue"
+          },
+          {
+            "title": "Mô tả là prompt",
+            "text": "Mô tả mơ hồ thì mô hình đoán; hàm ghi dữ liệu phải ghi rõ \"thao tác GHI\".",
+            "color": "blue"
+          },
+          {
+            "title": "Kết quả tự do kiểu",
+            "text": "record, kiểu ẩn danh, mảng đều được; nhưng mọi byte trả về đều tính token.",
+            "color": "blue"
+          }
+        ],
+        "names": "Tên trong code:  hàm = GetStock   |   tool = get_stock   |   danh sách = ChatOptions.Tools"
+      },
+      "nodes": [
+        {
+          "key": "fn",
+          "title": "GetStock — hàm C# + [Description]",
+          "what": "Nhận productCode, trả StockInfo (record) cho SP-001, SP-002 hoặc \"không tìm thấy\".",
+          "why": "Đây là thứ duy nhất thật sự chạy; mô hình chỉ xin gọi nó.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex1/Program.cs",
+              "start": 54,
+              "end": 64
+            }
+          ]
+        },
+        {
+          "key": "fac",
+          "title": "AIFunctionFactory.Create(GetStock, name: \"get_stock\")",
+          "what": "Sinh AIFunction từ chữ ký hàm và thuộc tính [Description].",
+          "why": "Tên tường minh chặn tên rác do trình biên dịch sinh ra.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex1/Program.cs",
+              "start": 14,
+              "end": 17
+            }
+          ]
+        },
+        {
+          "key": "opt",
+          "title": "ChatOptions { Tools = [getStock] }",
+          "what": "Gói danh sách tool để gửi kèm mỗi request GetResponseAsync.",
+          "why": "Mô hình quên danh sách sau mỗi request, nên phải gửi lại.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex1/Program.cs",
+              "start": 19,
+              "end": 19
+            }
+          ]
+        },
+        {
+          "key": "llm",
+          "title": "Mô hình LLM (Ollama / OpenAI-compatible)",
+          "what": "Đọc tên + mô tả + schema, quyết định gọi hay trả lời chữ.",
+          "why": "Chọn provider bằng biến môi trường LLM_PROVIDER, cùng trả IChatClient.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex1/Program.cs",
+              "start": 66,
+              "end": 79
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "fn",
+          "to": "fac",
+          "label": "chữ ký + mô tả"
+        },
+        {
+          "from": "fac",
+          "to": "opt",
+          "label": "AIFunction"
+        },
+        {
+          "from": "opt",
+          "to": "llm",
+          "label": "mỗi request"
+        }
+      ]
+    },
+    {
+      "name": "F1b Vòng lặp thủ công - Các bước kiểm tra",
+      "title": "F1b — Ex1: vòng lặp thủ công thiếu những kiểm tra nào",
+      "subtitle": "Code @ 23cd011 (working tree). Ô vàng = điều kiện cần kiểm (code bên trái) | ô đỏ = hậu quả khi code bài mẫu không kiểm | ô xanh đậm = kết quả thành công.",
+      "type": "decision",
+      "nodes": [
+        {
+          "key": "r1",
+          "label": "1. Lượt 1: gửi lịch sử + Tools",
+          "kind": "process",
+          "desc": "GetResponseAsync rồi history.AddMessages(response) để giữ tin gọi hàm.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 27,
+            "end": 28
+          }
+        },
+        {
+          "key": "c1",
+          "label": "2. Có FunctionCallContent trong response không?",
+          "kind": "decision",
+          "desc": "Nên kiểm tra sự có mặt của FunctionCallContent, không dựa vào FinishReason (OllamaSharp trả stop, OpenAI trả tool_calls; PDF trang 6).",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 31,
+            "end": 32
+          }
+        },
+        {
+          "key": "x1",
+          "label": "Code không rẽ nhánh khi không có tool call",
+          "kind": "reject",
+          "desc": "foreach chạy 0 lần nhưng dòng 44 vẫn gọi lượt 2 (đọc từ code, chưa chạy thử)."
+        },
+        {
+          "key": "c2",
+          "label": "3. Tên hàm mô hình xin có khớp tool nào không?",
+          "kind": "decision",
+          "desc": "Ex1 chỉ có một tool nên không tra tên.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 34,
+            "end": 39
+          }
+        },
+        {
+          "key": "x2",
+          "label": "Hard-code getStock.InvokeAsync",
+          "kind": "reject",
+          "desc": "Nếu thêm tool thứ hai, mọi call vẫn chạy getStock. Ex2 giao việc tra tên cho middleware."
+        },
+        {
+          "key": "c3",
+          "label": "4. Kết quả gắn đúng CallId chưa?",
+          "kind": "decision",
+          "desc": "CallId nối đơn xin với kết quả; khi mô hình xin 2 hàm cùng lúc, mỗi kết quả phải mang CallId của đơn tương ứng.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 40,
+            "end": 40
+          }
+        },
+        {
+          "key": "x3",
+          "label": "Sai CallId: mô hình không ghép được kết quả",
+          "kind": "reject",
+          "desc": "(suy từ PDF trang 2, chưa chạy thử trường hợp sai CallId)"
+        },
+        {
+          "key": "ok",
+          "label": "5. Lượt 2: mô hình viết câu trả lời cuối",
+          "kind": "success",
+          "desc": "Lịch sử đủ 5 tin: system, user, assistant(Call), tool(Result), assistant(Text).",
+          "code": {
+            "file": "tutorial/ngay-02/Ex1/Program.cs",
+            "start": 44,
+            "end": 51
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "r1",
+          "to": "c1"
+        },
+        {
+          "from": "c1",
+          "to": "c2",
+          "label": "Có"
+        },
+        {
+          "from": "c1",
+          "to": "x1",
+          "label": "Không",
+          "style": "dashed"
+        },
+        {
+          "from": "c2",
+          "to": "c3",
+          "label": "Khớp"
+        },
+        {
+          "from": "c2",
+          "to": "x2",
+          "label": "Không tra",
+          "style": "dashed"
+        },
+        {
+          "from": "c3",
+          "to": "ok",
+          "label": "Đúng"
+        },
+        {
+          "from": "c3",
+          "to": "x3",
+          "label": "Sai",
+          "style": "dashed"
+        }
+      ]
+    },
+    {
+      "name": "F2a UseFunctionInvocation - Kiến trúc",
+      "title": "F2a — Ex2/Ex3: middleware chạy vòng lặp thay bạn",
+      "subtitle": "Code @ 23cd011 (working tree)",
+      "type": "architecture",
+      "problem": "Vòng lặp ở Ex1 phải viết lại cho mọi chatbot: tra tool theo tên, xử lý nhiều call cùng lúc, lặp nếu mô hình xin tiếp. UseFunctionInvocation() bọc client trong FunctionInvokingChatClient để làm hết việc đó, code gọi vẫn chỉ một GetResponseAsync.",
+      "heading": "F2a — ChatClientBuilder, FunctionInvokingChatClient, FunctionInvoker và tool",
+      "summary": {
+        "title": "Flow 2 trong 1 phút: thuê quản lý đi kho thay bạn, và gắn máy quét thẻ ở cổng",
+        "context": {
+          "title": "Vấn đề của Ex1",
+          "text": "Tự viết foreach thì mỗi chatbot lặp lại cùng đoạn code, và dễ quên giới hạn số vòng."
+        },
+        "legend": "Màu ô:  xanh lá = code bài mẫu   |   xanh dương = middleware thư viện   |   vàng = kiểm soát / log   |   tím = mô hình",
+        "steps": [
+          {
+            "title": "1. Bọc client",
+            "text": "Bọc client gốc bằng ChatClientBuilder rồi gọi UseFunctionInvocation().",
+            "color": "green"
+          },
+          {
+            "title": "2. Gọi một lần",
+            "text": "GetResponseAsync hoặc GetStreamingResponseAsync; bên trong có thể nhiều vòng hỏi mô hình, chạy hàm, hỏi lại.",
+            "color": "blue"
+          },
+          {
+            "title": "3. FunctionInvoker bọc mỗi lần chạy hàm",
+            "text": "Chỗ để log, đo thời gian, kiểm tra quyền (Ex3).",
+            "color": "yellow"
+          },
+          {
+            "title": "4. Trả về mọi tin trung gian",
+            "text": "response.Messages có gọi hàm, kết quả, câu cuối; response.Usage là tổng token mọi vòng.",
+            "color": "blue"
+          }
+        ],
+        "bad": {
+          "after": 2,
+          "title": "Hàm ném exception?",
+          "text": "FunctionInvoker log lỗi đầy đủ rồi throw; middleware báo mô hình chung chung \"Error: Function failed.\" (IncludeDetailedErrors = false)."
+        },
+        "why": [
+          {
+            "title": "Một chỗ cấu hình",
+            "text": "MaximumIterationsPerRequest, MaximumConsecutiveErrorsPerRequest, IncludeDetailedErrors, AllowConcurrentInvocation.",
+            "color": "blue"
+          },
+          {
+            "title": "Một chỗ kiểm soát",
+            "text": "FunctionInvoker thấy mọi lần gọi hàm: nơi tự nhiên để kiểm tra người dùng có quyền xem kho này không.",
+            "color": "yellow"
+          },
+          {
+            "title": "Streaming vẫn đủ ngữ cảnh",
+            "text": "updates.ToChatResponse() giữ cả FunctionCallContent và FunctionResultContent cho lịch sử.",
+            "color": "blue"
+          }
+        ],
+        "names": "Tên trong code:  middleware = FunctionInvokingChatClient   |   hook = FunctionInvoker   |   tool = Erp.GetStock / GetOrderStatus / ListLowStock"
+      },
+      "nodes": [
+        {
+          "key": "loop",
+          "title": "Vòng chat — streaming + giữ lịch sử",
+          "what": "Thêm tin User, in từng update.Text, gom updates, rồi history.AddMessages(updates.ToChatResponse()).",
+          "why": "Lượt sau mô hình còn nhớ số đã tra vì lịch sử có cả tin gọi hàm và kết quả.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex3/Program.cs",
+              "start": 70,
+              "end": 82
+            }
+          ]
+        },
+        {
+          "key": "b",
+          "title": "ChatClientBuilder.UseFunctionInvocation(configure)",
+          "what": "Bọc client gốc, đặt giới hạn: tối đa 5 vòng, 2 lỗi liên tiếp, không đưa chi tiết lỗi cho mô hình, chạy hàm tuần tự.",
+          "why": "Mặc định là 40 vòng; chatbot ERP đặt 5 để một câu hỏi không đốt hàng chục lần gọi mô hình.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex3/Program.cs",
+              "start": 13,
+              "end": 20
+            }
+          ]
+        },
+        {
+          "key": "inv",
+          "title": "FunctionInvoker — bọc mọi lần gọi hàm",
+          "what": "Bấm giờ, in tên tool + tham số, chạy ctx.Function.InvokeAsync, log \"ok\" hoặc \"LỖI\" rồi throw lại.",
+          "why": "Đây là chỗ cắm log và kiểm quyền; throw lại để middleware tính vào số lỗi liên tiếp.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex3/Program.cs",
+              "start": 22,
+              "end": 37
+            }
+          ]
+        },
+        {
+          "key": "tool",
+          "title": "Erp.GetStock — tool ném exception khi không có mã",
+          "what": "Tra Dictionary; thiếu mã thì ném KeyNotFoundException kèm câu SQL mẫu.",
+          "why": "Cố ý để thấy: console người phát triển thấy đủ SQL, mô hình chỉ nhận lỗi chung chung.",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex3/Program.cs",
+              "start": 120,
+              "end": 127
+            }
+          ]
+        }
+      ],
+      "edges": [
+        {
+          "from": "loop",
+          "to": "b",
+          "label": "GetStreamingResponseAsync"
+        },
+        {
+          "from": "b",
+          "to": "inv",
+          "label": "mỗi tool call"
+        },
+        {
+          "from": "inv",
+          "to": "tool",
+          "label": "InvokeAsync"
+        }
+      ],
+      "sections": [
+        {
+          "title": "Ex2 so với Ex3",
+          "note": "Ex2 gọi một lần và soi response.Messages; Ex3 dùng streaming và giữ lịch sử nhiều lượt.",
+          "boxes": [
+            {
+              "title": "Ex2",
+              "text": "Mỗi câu hỏi tạo history mới (Ex2/Program.cs:30-34): các câu không nhớ nhau. In response.Messages và Usage (:43-54).",
+              "color": "grey"
+            },
+            {
+              "title": "Ex3",
+              "text": "history dùng chung cả phiên (Ex3/Program.cs:52-60, :81); 3 tool; temperature 0.1 (:43).",
+              "color": "green"
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "F2b Khi tool lỗi - Các bước kiểm tra",
+      "title": "F2b — Ex3: điều gì xảy ra khi tool lỗi hoặc mô hình gọi quá nhiều",
+      "subtitle": "Code @ 23cd011 (working tree). Ô vàng = điều kiện (code bên trái) | ô đỏ = kết quả bị chặn / báo lỗi | ô xanh đậm = thành công. Thứ tự và thông báo \"Error: Function failed.\" lấy từ PDF, chưa chạy thật.",
+      "type": "decision",
+      "nodes": [
+        {
+          "key": "s",
+          "label": "1. Mô hình xin gọi một tool",
+          "kind": "process",
+          "desc": "FunctionInvokingChatClient nhận FunctionCallContent và gọi FunctionInvoker.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 22,
+            "end": 25
+          }
+        },
+        {
+          "key": "c1",
+          "label": "2. Đã quá MaximumIterationsPerRequest (5)?",
+          "kind": "decision",
+          "desc": "Chặn vòng gọi hàm vô hạn; mặc định thư viện là 40.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 16,
+            "end": 16
+          }
+        },
+        {
+          "key": "x1",
+          "label": "Dừng vòng lặp",
+          "kind": "reject",
+          "desc": "Không còn gọi mô hình thêm cho câu hỏi này."
+        },
+        {
+          "key": "c2",
+          "label": "3. Hàm chạy xong không ném exception?",
+          "kind": "decision",
+          "desc": "FunctionInvoker bấm giờ và gọi ctx.Function.InvokeAsync.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 26,
+            "end": 31
+          }
+        },
+        {
+          "key": "x2",
+          "label": "Log LỖI rồi throw",
+          "kind": "reject",
+          "desc": "Console người phát triển thấy: \"Không có sản phẩm SP-999 trong bảng Items (SQL: ...)\".",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex3/Program.cs",
+              "start": 32,
+              "end": 36
+            },
+            {
+              "file": "tutorial/ngay-02/Ex3/Program.cs",
+              "start": 124,
+              "end": 125
+            }
+          ]
+        },
+        {
+          "key": "c3",
+          "label": "4. Chi tiết lỗi có đưa cho mô hình không (IncludeDetailedErrors)?",
+          "kind": "decision",
+          "desc": "Đặt false: mô hình không thấy nội dung exception, tránh lộ SQL.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 18,
+            "end": 18
+          }
+        },
+        {
+          "key": "x3",
+          "label": "Mô hình nhận: \"Error: Function failed.\"",
+          "kind": "reject",
+          "desc": "Nguồn: PDF trang 7. Mô hình nhỏ có thể diễn đạt lại vụng."
+        },
+        {
+          "key": "c4",
+          "label": "5. Lỗi liên tiếp đạt MaximumConsecutiveErrorsPerRequest (2)?",
+          "kind": "decision",
+          "desc": "Mặc định 3; Ex3 hạ xuống 2.",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 17,
+            "end": 17
+          }
+        },
+        {
+          "key": "x4",
+          "label": "Ném exception ra ngoài vòng chat",
+          "kind": "reject",
+          "desc": "Ex3 không có try/catch quanh vòng foreach ở dòng 73: phiên chat sẽ sập (đọc từ code, chưa chạy thử)."
+        },
+        {
+          "key": "ok",
+          "label": "6. Kết quả hàm quay lại mô hình, viết câu trả lời",
+          "kind": "success",
+          "desc": "Log: \" -> ok, N ms (vòng K)\".",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 28,
+            "end": 30
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "s",
+          "to": "c1"
+        },
+        {
+          "from": "c1",
+          "to": "c2",
+          "label": "Chưa"
+        },
+        {
+          "from": "c1",
+          "to": "x1",
+          "label": "Rồi",
+          "style": "dashed"
+        },
+        {
+          "from": "c2",
+          "to": "ok",
+          "label": "Không lỗi"
+        },
+        {
+          "from": "c2",
+          "to": "x2",
+          "label": "Có lỗi",
+          "style": "dashed"
+        },
+        {
+          "from": "x2",
+          "to": "c3"
+        },
+        {
+          "from": "c3",
+          "to": "x3",
+          "label": "false",
+          "style": "dashed"
+        },
+        {
+          "from": "x3",
+          "to": "c4"
+        },
+        {
+          "from": "c4",
+          "to": "x4",
+          "label": "Có",
+          "style": "dashed"
+        }
+      ]
+    },
+    {
+      "name": "F3 Ex3 một lượt chat - Swimlane",
+      "title": "F3 — Ex3: một lượt chat hỏi tồn kho, ai làm gì",
+      "subtitle": "Code @ 23cd011 (working tree)",
+      "subtitle_text": "Đọc từ trên xuống. Mỗi cột là một thành phần; ô ghi \"Làm gì\" và file:dòng.",
+      "type": "swimlane",
+      "lanes": [
+        {
+          "key": "u",
+          "title": "Người dùng + console",
+          "sub": "Console.ReadLine / Write",
+          "color": "blue"
+        },
+        {
+          "key": "p",
+          "title": "Vòng chat",
+          "sub": "Ex3/Program.cs",
+          "color": "green"
+        },
+        {
+          "key": "f",
+          "title": "FunctionInvokingChatClient",
+          "sub": "middleware + FunctionInvoker",
+          "color": "yellow"
+        },
+        {
+          "key": "e",
+          "title": "Erp (tool)",
+          "sub": "GetStock, GetOrderStatus, ListLowStock",
+          "color": "purple"
+        }
+      ],
+      "steps": [
+        {
+          "key": "a",
+          "lane": "u",
+          "title": "1. Gõ câu hỏi",
+          "text": "\"SP-002 còn bao nhiêu?\"; /exit hoặc null thì thoát, rỗng thì hỏi lại.",
+          "color": "blue",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 65,
+            "end": 68
+          }
+        },
+        {
+          "key": "b",
+          "lane": "p",
+          "title": "2. Thêm User vào history, stream",
+          "text": "history.Add(User); await foreach GetStreamingResponseAsync(history, options).",
+          "color": "green",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 70,
+            "end": 73
+          }
+        },
+        {
+          "key": "c",
+          "lane": "f",
+          "title": "3. Mô hình xin tool, FunctionInvoker chạy",
+          "text": "Log tên tool + tham số, bấm giờ, InvokeAsync, in \" -> ok, N ms (vòng K)\".",
+          "color": "yellow",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 22,
+            "end": 30
+          }
+        },
+        {
+          "key": "d",
+          "lane": "e",
+          "title": "4. Erp.GetStock chạy",
+          "text": "Tra Dictionary Stock, trả object chỉ gồm 4 trường mô hình cần.",
+          "color": "purple",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 120,
+            "end": 127
+          }
+        },
+        {
+          "key": "g",
+          "lane": "f",
+          "title": "5. Hỏi lại mô hình với kết quả",
+          "text": "Mô hình viết câu trả lời; các update chữ chảy ra ngoài.",
+          "color": "yellow",
+          "code": null
+        },
+        {
+          "key": "h",
+          "lane": "p",
+          "title": "6. In từng update, gom lại",
+          "text": "Console.Write(update.Text); updates.Add(update).",
+          "color": "green",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 73,
+            "end": 77
+          }
+        },
+        {
+          "key": "i",
+          "lane": "p",
+          "title": "7. Lưu lịch sử đủ ngữ cảnh",
+          "text": "history.AddMessages(updates.ToChatResponse()); in \"[lịch sử: N tin]\".",
+          "color": "green",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 80,
+            "end": 82
+          }
+        },
+        {
+          "key": "j",
+          "lane": "u",
+          "title": "8. Thấy câu trả lời",
+          "text": "Vòng lặp quay lại bước 1 với cùng history.",
+          "color": "blue",
+          "code": {
+            "file": "tutorial/ngay-02/Ex3/Program.cs",
+            "start": 63,
+            "end": 65
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "a",
+          "to": "b"
+        },
+        {
+          "from": "b",
+          "to": "c"
+        },
+        {
+          "from": "c",
+          "to": "d"
+        },
+        {
+          "from": "d",
+          "to": "g"
+        },
+        {
+          "from": "g",
+          "to": "h"
+        },
+        {
+          "from": "h",
+          "to": "i"
+        },
+        {
+          "from": "i",
+          "to": "j"
+        }
+      ]
+    },
+    {
+      "name": "F4 Ex4 duyệt trước khi ghi - Swimlane",
+      "title": "F4 — Ex4: tool ghi dữ liệu phải được người dùng duyệt, ai làm gì",
+      "subtitle": "Code @ 23cd011 (working tree)",
+      "subtitle_text": "Đọc từ trên xuống. Đã đối chiếu code: system prompt Ex4 không có câu \"không bịa số\", và agent không đặt MaximumIterationsPerRequest (dùng mặc định).",
+      "type": "swimlane",
+      "lanes": [
+        {
+          "key": "u",
+          "title": "Người dùng",
+          "sub": "console y/n",
+          "color": "blue"
+        },
+        {
+          "key": "p",
+          "title": "Vòng chat Ex4",
+          "sub": "Program.cs",
+          "color": "green"
+        },
+        {
+          "key": "a",
+          "title": "ChatClientAgent",
+          "sub": "AIAgent + AgentSession",
+          "color": "yellow"
+        },
+        {
+          "key": "w",
+          "title": "CreatePurchaseRequest",
+          "sub": "tool GHI vào ERP",
+          "color": "red"
+        }
+      ],
+      "steps": [
+        {
+          "key": "s1",
+          "lane": "p",
+          "title": "1. Dựng agent + session",
+          "text": "AsAIAgent(tools: [getStock, new ApprovalRequiredAIFunction(createPr)]); CreateSessionAsync().",
+          "color": "green",
+          "code": [
+            {
+              "file": "tutorial/ngay-02/Ex4/Program.cs",
+              "start": 17,
+              "end": 22
+            }
+          ]
+        },
+        {
+          "key": "s2",
+          "lane": "u",
+          "title": "2. \"Tạo đề xuất đặt mua 20 cái SP-003\"",
+          "text": "Gõ câu hỏi vào console.",
+          "color": "blue",
+          "code": {
+            "file": "tutorial/ngay-02/Ex4/Program.cs",
+            "start": 27,
+            "end": 30
+          }
+        },
+        {
+          "key": "s3",
+          "lane": "a",
+          "title": "3. RunAsync, dừng lại xin duyệt",
+          "text": "Mô hình xin create_purchase_request; hàm bọc Approval nên agent KHÔNG chạy mà trả ToolApprovalRequestContent.",
+          "color": "yellow",
+          "code": {
+            "file": "tutorial/ngay-02/Ex4/Program.cs",
+            "start": 32,
+            "end": 36
+          }
+        },
+        {
+          "key": "s4",
+          "lane": "p",
+          "title": "4. Hỏi y/n từng yêu cầu",
+          "text": "Cast req.ToolCall sang FunctionCallContent, in tên hàm + tham số, đọc dòng nhập; chỉ \"y\" là duyệt.",
+          "color": "green",
+          "code": {
+            "file": "tutorial/ngay-02/Ex4/Program.cs",
+            "start": 39,
+            "end": 45
+          }
+        },
+        {
+          "key": "s5",
+          "lane": "u",
+          "title": "5. Gõ y hoặc n",
+          "text": "Quyết định của người thật.",
+          "color": "blue",
+          "code": null
+        },
+        {
+          "key": "s6",
+          "lane": "a",
+          "title": "6. RunAsync(answers, CÙNG session)",
+          "text": "Gửi req.CreateResponse(ok) dưới vai User để agent chạy tiếp hoặc báo bị từ chối.",
+          "color": "yellow",
+          "code": {
+            "file": "tutorial/ngay-02/Ex4/Program.cs",
+            "start": 47,
+            "end": 48
+          }
+        },
+        {
+          "key": "s7",
+          "lane": "w",
+          "title": "7a. Đã duyệt: C# GHI vào ERP",
+          "text": "Tạo PR-xxxx, trả requestId + trạng thái chờ trưởng phòng phê duyệt.",
+          "color": "red",
+          "code": {
+            "file": "tutorial/ngay-02/Ex4/Program.cs",
+            "start": 65,
+            "end": 73
+          }
+        },
+        {
+          "key": "s8",
+          "lane": "a",
+          "title": "7b. Từ chối: hàm KHÔNG chạy",
+          "text": "Mô hình nhận \"Tool call invocation was rejected by the approver and must not be retried.\" (PDF trang 7).",
+          "color": "orange",
+          "code": null
+        },
+        {
+          "key": "s9",
+          "lane": "p",
+          "title": "8. Lặp đến hết yêu cầu duyệt, in câu trả lời",
+          "text": "while còn ToolApprovalRequestContent; cuối cùng Console.WriteLine(response.Text).",
+          "color": "green",
+          "code": {
+            "file": "tutorial/ngay-02/Ex4/Program.cs",
+            "start": 35,
+            "end": 51
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": "s1",
+          "to": "s2"
+        },
+        {
+          "from": "s2",
+          "to": "s3"
+        },
+        {
+          "from": "s3",
+          "to": "s4"
+        },
+        {
+          "from": "s4",
+          "to": "s5"
+        },
+        {
+          "from": "s5",
+          "to": "s6"
+        },
+        {
+          "from": "s6",
+          "to": "s7",
+          "label": "y"
+        },
+        {
+          "from": "s6",
+          "to": "s8",
+          "label": "n",
+          "style": "dashed"
+        },
+        {
+          "from": "s7",
+          "to": "s9"
+        },
+        {
+          "from": "s8",
+          "to": "s9"
+        }
+      ]
+    }
+  ]
+}
